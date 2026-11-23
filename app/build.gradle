@@ -1,0 +1,81 @@
+apply plugin: 'com.android.application'
+
+android {
+    // RootEncoder 2.8.1 minta compileSdk minimal 35. Kalau SDK Platform 36 belum
+    // ada/gagal diunduh di SDK Manager AndroidIDE, ganti angka di bawah jadi 35 saja
+    // (itu sudah cukup, gak harus 36).
+    compileSdkVersion 36
+    namespace "com.gesits.dashboard"
+    defaultConfig {
+        applicationId "com.gesits.dashboard"
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 2
+        versionName "1.0.1.21"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    // MapLibre v9 — pakai namespace com.mapbox.mapboxsdk (kompatibel AndroidIDE)
+    implementation 'org.maplibre.gl:android-sdk:9.6.0'
+
+    // OkHttp — routing OSRM & search Nominatim
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // WebViewAssetLoader — serve index.html lokal lewat origin https:// asli
+    // (appassets.androidplatform.net), gantiin file:///android_asset/ — ini
+    // yg ngatasin bug getUserMedia audio (NotReadableError) yg cuma muncul
+    // pas dimuat via file:// origin.
+    implementation 'androidx.webkit:webkit:1.11.0'
+
+    // Live Streaming: kamera + HUD -> RTMP (YouTube Live dsb). Dipakai oleh
+    // LiveStreamActivity.java. Cek versi terbaru di
+    // https://github.com/pedroSG94/RootEncoder — kode ditulis buat versi 2.3.4,
+    // versi lebih baru mungkin butuh sedikit penyesuaian nama method (lihat
+    // SETUP_LIVE_STREAMING.md). Butuh repo JitPack — lihat catatan di bawah
+    // dependencies{} kalau build gagal karena "could not find" library ini.
+    // Versi lama (2.3.4) yang tadi ternyata tidak ada di JitPack, coba modul-modul
+    // ini dulu — belum bisa dipastikan sampai kamu coba build lagi (lihat pesan
+    // di chat soal kenapa).
+    implementation 'com.github.pedroSG94.RootEncoder:common:2.8.1'
+    implementation 'com.github.pedroSG94.RootEncoder:rtmp:2.8.1'
+    // RtmpCamera1 & OpenGlView (dipakai di LiveStreamActivity.java) ternyata ada
+    // di modul terpisah bernama "library", dikonfirmasi dari contoh resmi
+    // OldApiActivity.kt (package com.pedro.library.*). common & rtmp di atas
+    // kemungkinan sudah otomatis ke-include transitif lewat ini, tapi dibiarkan
+    // eksplisit biar jelas & gak bergantung urutan resolusi.
+    implementation 'com.github.pedroSG94.RootEncoder:library:2.8.1'
+
+    testImplementation 'junit:junit:4.+'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
+
+// Kalau build gagal karena JitPack belum terdaftar sbg repository ("Could not
+// find com.github.pedroSG94.RootEncoder..."), tambahkan blok ini di
+// settings.gradle (bukan file ini) — dependencyResolutionManagement.repositories:
+//
+//   maven { url 'https://jitpack.io' }
+//
+// AndroidIDE/beberapa setup lama menaruh repositories{} di sini (level modul)
+// alih-alih di settings.gradle. Kalau proyekmu masih pola lama itu, tambahkan
+// blok berikut di ATAS "android {" pada file ini:
+//
+// allprojects { repositories { maven { url 'https://jitpack.io' } } }

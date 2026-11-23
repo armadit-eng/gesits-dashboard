@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Download folder -->
+    <external-path name="downloads" path="Download/"/>
+    <!-- Internal app files -->
+    <files-path name="files" path="."/>
+    <!-- Cache -->
+    <cache-path name="cache" path="."/>
+    <!-- App-specific external storage (getExternalFilesDir) — dipakai buat
+         simpan APK update sebelum diinstall (lihat MainActivity.startApkDownload) -->
+    <external-files-path name="external_files" path="."/>
+</paths>

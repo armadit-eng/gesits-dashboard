@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system"/>
+            <certificates src="user"/>
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- OSM tile servers -->
+        <domain includeSubdomains="true">tile.openstreetmap.org</domain>
+        <domain includeSubdomains="true">tile.openstreetmap.fr</domain>
+        <domain includeSubdomains="true">basemaps.cartocdn.com</domain>
+        <!-- OpenFreeMap — vector style gratis mirip Mapbox Streets -->
+        <domain includeSubdomains="true">tiles.openfreemap.org</domain>
+        <domain includeSubdomains="true">openfreemap.org</domain>
+        <!-- Routing -->
+        <domain includeSubdomains="true">router.project-osrm.org</domain>
+        <domain includeSubdomains="true">routing.openstreetmap.de</domain>
+        <!-- Search -->
+        <domain includeSubdomains="true">nominatim.openstreetmap.org</domain>
+        <!-- MapTiler (opsional, kalau pakai API key) -->
+        <domain includeSubdomains="true">api.maptiler.com</domain>
+        <!-- Esri satellite -->
+        <domain includeSubdomains="true">arcgisonline.com</domain>
+        <domain includeSubdomains="true">server.arcgisonline.com</domain>
+    </domain-config>
+</network-security-config>

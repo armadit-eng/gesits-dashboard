@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Bluetooth Classic SPP — semua versi Android -->
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+
+    <!-- Bluetooth Android 12+ (SDK 31+) -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+
+    <!-- Foreground Service — wajib deklarasi type di Android 14+ -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <!-- Peta native (NativeMapService): GPS tetap hidup saat layar mati / aplikasi di-minimize -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+<uses-permission android:name="android.permission.CAMERA" />
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
+<uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!-- Internet -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Notifikasi Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!-- WakeLock -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- Share & Export -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32"/>
+
+    <!-- Update APK in-app: wajib buat buka installer package lewat ACTION_VIEW -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+	<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+
+    <application
+        android:allowBackup="true"
+        android:label="GESITS"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.AppCompat.NoActionBar"
+        android:hardwareAccelerated="true"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:hardwareAccelerated="true"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+
+            <!-- Muncul di menu "Bagikan/Share" (mis. dari WhatsApp / Google Maps): teks berisi link Maps -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
+
+            <!-- Muncul di pilihan "Buka dengan" saat link Google Maps diketuk.
+                 Android 12+ : link web hanya diarahkan ke app kalau pengguna mengaktifkannya manual
+                 (Info app > Buka secara default > Tambahkan link). Tanpa itu pakai menu Share. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:scheme="http"/>
+                <data android:host="maps.app.goo.gl"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:scheme="http"/>
+                <data android:host="goo.gl"/>
+                <data android:pathPrefix="/maps"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:scheme="http"/>
+                <data android:host="www.google.com"/>
+                <data android:host="google.com"/>
+                <data android:host="maps.google.com"/>
+                <data android:pathPrefix="/maps"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"/>
+                <data android:host="share.google"/>
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.gesits.dashboard.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
+
+        <!--
+            Android 14+: foregroundServiceType wajib ada dan
+            harus cocok dengan permission FOREGROUND_SERVICE_CONNECTED_DEVICE
+        -->
+        <service
+            android:name=".BluetoothService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice"/>
+
+        <!-- Mirror layar HP (Google Maps) ke MID lewat AT+MAPS -->
+        <service
+            android:name=".ScreenCaptureService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"/>
+
+        <!-- Peta native ke MID: service foreground tipe location supaya GPS native tidak diblokir di latar belakang -->
+        <service
+            android:name=".NativeMapService"
+            android:exported="false"
+            android:foregroundServiceType="location"/>
+
+        <!-- Baca notifikasi navigasi Google Maps untuk AT+NAV (saat mirror layar aktif) -->
+        <service
+            android:name=".MapsNotifListener"
+            android:exported="true"
+            android:label="GESITS Notif Maps"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
+
+        <activity
+            android:name=".MapActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|screenLayout"
+            android:theme="@style/Theme.AppCompat.NoActionBar"/>
+
+        <!-- Live Streaming: kamera + overlay HUD -> RTMP (lihat LiveStreamActivity.java) -->
+        <activity
+            android:name=".LiveStreamActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|screenLayout"
+            android:theme="@style/Theme.AppCompat.NoActionBar"/>
+
+        <!-- Widget home screen: SOC / range / status koneksi -->
+        <receiver
+            android:name=".GesitsWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_gesits_info"/>
+        </receiver>
+
+    </application>
+</manifest>
