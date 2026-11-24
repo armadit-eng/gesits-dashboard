@@ -117,6 +117,11 @@ public class BluetoothService extends Service {
         try {
             // Android 14+ wajib panggil startForeground dengan serviceType
             if (Build.VERSION.SDK_INT >= 34) {
+                if (!hasConnectedDevicePermission()) {
+                    Log.w(TAG, "Izin BLUETOOTH_CONNECT/SCAN belum granted — hentikan FGS sementara");
+                    stopSelf();
+                    return START_NOT_STICKY;
+                }
                 startForeground(NOTIF_ID, buildNotification("Menunggu koneksi..."),
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             } else {
@@ -124,8 +129,8 @@ public class BluetoothService extends Service {
             }
         } catch (Exception e) {
             Log.e(TAG, "startForeground failed: " + e.getMessage());
-            // Jangan crash — service tetap jalan tanpa foreground notification
-            // (kemungkinan akan di-kill OS lebih cepat, tapi app tidak FC)
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         try {
@@ -137,6 +142,16 @@ public class BluetoothService extends Service {
         }
 
         return START_STICKY;
+    }
+
+    private boolean hasConnectedDevicePermission() {
+        if (Build.VERSION.SDK_INT < 31) return true;
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.BLUETOOTH_CONNECT)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED
+            || androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.BLUETOOTH_SCAN)
+                    == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
 
     @Override

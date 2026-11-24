@@ -74,6 +74,7 @@ public class MainActivity extends Activity {
     private WebView           webView;
     private BluetoothService  btService;
     private boolean           serviceBound = false;
+    private boolean           serviceBinding = false;
     private SharedPreferences prefs;
 
     // BLE GATT client khusus BMS Jikong — terpisah dari btService (Classic/RFCOMM,
@@ -143,6 +144,7 @@ public class MainActivity extends Activity {
             BluetoothService.LocalBinder lb = (BluetoothService.LocalBinder) binder;
             btService    = lb.getService();
             serviceBound = true;
+            serviceBinding = false;
             MapActivity.btServiceRef = btService;
             ScreenCaptureService.btRef = btService;
 
@@ -217,6 +219,7 @@ public class MainActivity extends Activity {
         @Override
         public void onServiceDisconnected(ComponentName name) {
             serviceBound = false;
+            serviceBinding = false;
             ScreenCaptureService.btRef = null;
         }
     };
@@ -2263,14 +2266,32 @@ public class MainActivity extends Activity {
         webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         requestBtPermissions();
 
-        // Mulai Foreground Service SETELAH permission diminta,
-        // dibungkus try-catch penuh agar app tidak crash kalau gagal.
-        // Android 13+ butuh POST_NOTIFICATIONS sudah granted sebelum
-        // startForeground() dipanggil di service, kalau belum bisa SecurityException.
-        startBluetoothServiceSafely();
+        // Android 14+ (targetSdk 34) mewajibkan minimal satu izin connectedDevice
+        // (BLUETOOTH_CONNECT / BLUETOOTH_SCAN) sudah granted sebelum memanggil
+        // startForegroundService untuk tipe connectedDevice; kalau belum, tunggu
+        // hasil dialog izin di onRequestPermissionsResult / onResume.
+        if (hasConnectedDevicePermission()) {
+            startBluetoothServiceSafely();
+        }
+    }
+
+    private static final int REQUEST_CODE_INIT_PERMS = 1;
+
+    private boolean hasConnectedDevicePermission() {
+        if (Build.VERSION.SDK_INT < 31) return true;
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT)
+                    == PackageManager.PERMISSION_GRANTED
+            || ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN)
+                    == PackageManager.PERMISSION_GRANTED;
     }
 
     private void startBluetoothServiceSafely() {
+        if (serviceBound || serviceBinding) return;
+        if (Build.VERSION.SDK_INT >= 34 && !hasConnectedDevicePermission()) {
+            android.util.Log.w("MainActivity",
+                "Menunggu izin Bluetooth sebelum startForeground BluetoothService");
+            return;
+        }
         try {
             Intent svcIntent = new Intent(this, BluetoothService.class);
             if (Build.VERSION.SDK_INT >= 26) {
@@ -2278,8 +2299,9 @@ public class MainActivity extends Activity {
             } else {
                 startService(svcIntent);
             }
-            bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
+            serviceBinding = bindService(svcIntent, serviceConn, Context.BIND_AUTO_CREATE);
         } catch (Exception e) {
+            serviceBinding = false;
             android.util.Log.e("MainActivity",
                 "Gagal start BluetoothService: " + e.getMessage());
             // App tetap jalan, hanya fitur Bluetooth yang tidak aktif
@@ -2349,7 +2371,7 @@ public class MainActivity extends Activity {
 
         if (!needed.isEmpty())
             ActivityCompat.requestPermissions(this,
-                needed.toArray(new String[0]), 1);
+                needed.toArray(new String[0]), REQUEST_CODE_INIT_PERMS);
     }
 
     @Override
@@ -2408,6 +2430,12 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
             int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_CODE_INIT_PERMS) {
+            if (!serviceBound && !serviceBinding && hasConnectedDevicePermission()) {
+                startBluetoothServiceSafely();
+            }
+            return;
+        }
         if (requestCode == REQUEST_CODE_MIC_PERMISSION) {
             boolean granted = grantResults.length > 0
                 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
@@ -2441,6 +2469,9 @@ public class MainActivity extends Activity {
         super.onResume();
         KeepAliveWebView.forceVisible = false;    // Activity di depan lagi: visibility normal
         if (webView != null) webView.onResume();
+        if (!serviceBound && !serviceBinding && hasConnectedDevicePermission()) {
+            startBluetoothServiceSafely();
+        }
     }
 
     @Override
@@ -2471,6 +2502,7 @@ public class MainActivity extends Activity {
             unbindService(serviceConn);
             serviceBound = false;
         }
+        serviceBinding = false;
         super.onDestroy();
     }
 
