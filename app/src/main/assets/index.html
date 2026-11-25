@@ -6004,15 +6004,17 @@ const IS_NATIVE_ANDROID = (typeof Android !== 'undefined');
 //    "https://drive.google.com/uc?export=download&id=FILE_ID" (bukan link
 //    /view biasa) — ini skip 1 langkah tapi TETAP bisa kena halaman
 //    konfirmasi kalau ukuran filenya di atas ambang scan Google (~25MB).
-const APP_VERSION = '1.0.1.23';
-const APP_VERSION_CODE = 4;
+const APP_VERSION = '1.0.1.24';
+const APP_VERSION_CODE = 5;
 const PWA_WEB_URL = 'https://gesits.pages.dev';
-const APK_DOWNLOAD_URL = 'https://github.com/armadit-eng/dashboard-app/releases/latest';
+const PWA_VERSION_URL = 'https://gesits.pages.dev/version.json';
+const APK_DOWNLOAD_URL = 'https://github.com/armadit-eng/gesits-dashboard/releases/latest';
 const APK_FILENAME = 'gesits-app.apk'; // nama file pas di-download, disesuaikan aja
-const GITHUB_REPO = 'armadit-eng/dashboard-app';
+const GITHUB_REPO = 'armadit-eng/gesits-dashboard';
+const GITHUB_REPOS = ['armadit-eng/gesits-dashboard'];
 
 // ── Cek update APK asli buat native (bukan cuma Service Worker PWA) ──
-let _nativeAppUpdate = { checked:false, available:false, installedVersion:null, installedCode:0, latestVersion:null, downloadUrl:null, notes:'' };
+let _nativeAppUpdate = { checked:false, available:false, noReleaseYet:false, installedVersion:null, installedCode:0, latestVersion:null, downloadUrl:null, notes:'' };
 let _updateToastShownThisSession = false;
 
 // Key localStorage buat lacak versi terakhir yang ditunda ("Nanti") lewat
@@ -6049,20 +6051,73 @@ function _compareVersions(a, b){
 }
 
 let _latestReleaseCache = null;
-async function fetchLatestGithubRelease(forceRefresh){
-  if(_latestReleaseCache && !forceRefresh) return _latestReleaseCache;
-  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, { cache: 'no-store' });
-  if(!res.ok) throw new Error('GitHub API status '+res.status);
-  const data = await res.json();
+function _parseGithubReleaseObj(data){
+  if(!data || !data.tag_name) return null;
   const apkAsset = (data.assets||[]).find(a => a.name && a.name.endsWith('.apk'));
-  _latestReleaseCache = {
+  return {
     tag: (data.tag_name||'').replace(/^v/i,''),
     apkUrl: apkAsset ? apkAsset.browser_download_url : null,
     htmlUrl: data.html_url || null,
     notes: data.body || '',
     publishedAt: data.published_at || ''
   };
-  return _latestReleaseCache;
+}
+
+async function _fetchRemoteJsonSafe(url){
+  try{
+    const res = await fetch(url, { cache: 'no-store' });
+    if(res.ok) return { ok: true, status: res.status, data: await res.json() };
+    if(res.status === 404) return { ok: false, status: 404, data: null };
+  }catch(e){}
+  if(IS_NATIVE_ANDROID && typeof _nativeFetchText === 'function'){
+    try{
+      const r = await _nativeFetchText(url, '');
+      if(r && r.ok && r.text) return { ok: true, status: r.status || 200, data: JSON.parse(r.text) };
+      if(r && r.status === 404) return { ok: false, status: 404, data: null };
+    }catch(e){}
+  }
+  return { ok: false, status: 0, data: null };
+}
+
+async function fetchLatestGithubRelease(forceRefresh){
+  if(_latestReleaseCache && !forceRefresh) return _latestReleaseCache;
+  let sawNetworkError = false;
+
+  for(const repo of GITHUB_REPOS){
+    const rLatest = await _fetchRemoteJsonSafe(`https://api.github.com/repos/${repo}/releases/latest`);
+    if(rLatest.ok){
+      const parsed = _parseGithubReleaseObj(rLatest.data);
+      if(parsed){ _latestReleaseCache = parsed; return parsed; }
+    } else if(rLatest.status === 404){
+      // /releases/latest mengembalikan 404 jika rilis bertipe Pre-release; coba list /releases
+      const rList = await _fetchRemoteJsonSafe(`https://api.github.com/repos/${repo}/releases?per_page=1`);
+      if(rList.ok && Array.isArray(rList.data) && rList.data.length){
+        const parsed = _parseGithubReleaseObj(rList.data[0]);
+        if(parsed){ _latestReleaseCache = parsed; return parsed; }
+      }
+    } else if(rLatest.status === 0){
+      sawNetworkError = true;
+    }
+  }
+
+  // Fallback ke version.json di gesits.pages.dev (aman meski repo GitHub private / belum ada release)
+  const rPwa = await _fetchRemoteJsonSafe(PWA_VERSION_URL + '?t=' + Date.now());
+  if(rPwa.ok && rPwa.data && rPwa.data.version){
+    _latestReleaseCache = {
+      tag: String(rPwa.data.version).replace(/^v/i,''),
+      apkUrl: rPwa.data.apkUrl || null,
+      htmlUrl: rPwa.data.releaseUrl || PWA_WEB_URL,
+      notes: rPwa.data.notes || '',
+      publishedAt: rPwa.data.publishedAt || ''
+    };
+    return _latestReleaseCache;
+  }
+
+  const err = new Error(sawNetworkError
+    ? 'Gagal terhubung ke server update (cek koneksi internet)'
+    : 'Belum ada rilis publik ditemukan di GitHub / gesits.pages.dev');
+  err.code = sawNetworkError ? 'NETWORK' : 'NOT_FOUND';
+  throw err;
 }
 
 async function checkNativeAppVersion(manual){
@@ -6079,6 +6134,7 @@ async function checkNativeAppVersion(manual){
     if(!installed || !release.tag) throw new Error('versi kosong');
     const cmp = _compareVersions(release.tag, installed);
     _nativeAppUpdate.checked = true;
+    _nativeAppUpdate.noReleaseYet = false;
     _nativeAppUpdate.latestVersion = release.tag;
     _nativeAppUpdate.available = cmp > 0;
     _nativeAppUpdate.downloadUrl = release.apkUrl || release.htmlUrl;
@@ -6094,9 +6150,14 @@ async function checkNativeAppVersion(manual){
       showToast(`✅ Aplikasi sudah versi terbaru (v${installed})`);
     }
   }catch(e){
-    log('Cek update APK gagal: '+e.message,'err');
+    log('Cek update APK: '+e.message,'err');
     _nativeAppUpdate.checked = false;
-    if(manual) showToast('⚠️ Gagal mengecek update: ' + e.message);
+    _nativeAppUpdate.noReleaseYet = (e && e.code === 'NOT_FOUND');
+    if(manual){
+      showToast(_nativeAppUpdate.noReleaseYet
+        ? 'ℹ️ Belum ada rilis publik di GitHub. Pastikan repo publik & workflow Release sudah jalan.'
+        : ('⚠️ ' + e.message));
+    }
   }
   updatePintasanUpdateSub();
   try{ updateNotifBadge(); }catch(e){}
@@ -6238,7 +6299,9 @@ function refreshAboutAppModalIfOpen(forcePopulate){
   if(curEl) curEl.textContent = `v${info.version}` + (info.code ? ` (Build ${info.code})` : '');
   if(IS_NATIVE_ANDROID){
     if(!_nativeAppUpdate.checked){
-      if(stEl) stEl.innerHTML = '<span style="color:var(--muted)">Belum dicek / menunggu jaringan</span>';
+      if(stEl) stEl.innerHTML = _nativeAppUpdate.noReleaseYet
+        ? '<span style="color:var(--muted)">Belum ada rilis publik di GitHub / gesits.pages.dev</span>'
+        : '<span style="color:var(--muted)">Belum dicek / menunggu jaringan</span>';
       if(ntEl) ntEl.style.display = 'none';
       if(btnEl){ btnEl.textContent = '🔄 Cek Update Sekarang'; btnEl.onclick = ()=>{ checkNativeAppVersion(true); }; }
     } else if(_nativeAppUpdate.available){
@@ -17357,7 +17420,7 @@ function updateAkunOfflineMapStrip(count, sizeMB){
 }
 
 // ── DATABASE CHARGING MOLIS (Bawaan + Sync URL + Import JSON/KML/CSV/GPX) ──
-const MOLIS_DEFAULT_SYNC_URL = 'https://raw.githubusercontent.com/armadit-eng/dashboard-app/main/app/src/main/assets/charging_molis_indonesia.json';
+const MOLIS_DEFAULT_SYNC_URL = 'https://raw.githubusercontent.com/armadit-eng/gesits-dashboard/main/app/src/main/assets/charging_molis_indonesia.json';
 const MOLIS_FALLBACK_SYNC_URL = 'https://raw.githubusercontent.com/armadit-eng/Gesits-Classic/main/app/src/main/assets/charging_molis_indonesia.json';
 const MOLIS_LS_URL_KEY = 'molis_sync_url';
 const MOLIS_LS_AUTOSYNC_KEY = 'molis_sync_enabled';

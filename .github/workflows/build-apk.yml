@@ -138,26 +138,15 @@ jobs:
           path: GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk
           retention-days: 30
 
-      - name: Commit bumped version back to repository
-        if: github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle app/src/main/assets/index.html app/src/main/assets/sw.js
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: bump version to ${{ steps.bump.outputs.version_name }} (${{ steps.bump.outputs.version_code }}) [skip ci]"
-            git pull --rebase --autostash origin "${{ github.ref_name }}"
-            git push origin "HEAD:${{ github.ref_name }}"
-          fi
-
-      - name: Generate release changelog
+      - name: Generate release changelog & update version.json
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:
           VERSION_NAME: ${{ steps.bump.outputs.version_name }}
           VERSION_CODE: ${{ steps.bump.outputs.version_code }}
+          REPO_SLUG: ${{ github.repository }}
         run: |
           python3 - <<'EOF'
-          import os, subprocess
+          import json, os, subprocess
           from pathlib import Path
 
           def git(*args):
@@ -175,20 +164,40 @@ jobs:
               ln.strip() for ln in raw_logs.splitlines()
               if ln.strip()
               and not ln.strip().startswith("chore: bump version")
+              and not ln.strip().startswith("chore: update version.json")
               and "[skip ci]" not in ln
           ]
 
           v_name = os.environ.get("VERSION_NAME", "")
-          v_code = os.environ.get("VERSION_CODE", "")
-          notes = [f"### Perubahan di v{v_name} (Build {v_code})"]
-          if lines:
-              for ln in lines[:20]:
-                  notes.append(f"- {ln}")
-          else:
-              notes.append("- Pembaruan stabilitas, perbaikan bug, dan peningkatan performa aplikasi.")
+          v_code = int(os.environ.get("VERSION_CODE", "0") or 0)
+          repo = os.environ.get("REPO_SLUG", "armadit-eng/gesits-dashboard")
+          apk_name = f"GesitsDashboard-v{v_name}-vc{v_code}-debug.apk"
+          notes_lines = [f"- {ln}" for ln in lines[:20]] if lines else ["- Pembaruan stabilitas, perbaikan bug, dan peningkatan performa aplikasi."]
 
-          Path("release_notes.md").write_text("\n".join(notes) + "\n", encoding="utf-8")
+          release_md = "\n".join([f"### Perubahan di v{v_name} (Build {v_code})", *notes_lines]) + "\n"
+          Path("release_notes.md").write_text(release_md, encoding="utf-8")
+
+          ver_json = {
+              "version": v_name,
+              "versionCode": v_code,
+              "apkUrl": f"https://github.com/{repo}/releases/download/{v_name}/{apk_name}",
+              "releaseUrl": f"https://github.com/{repo}/releases/tag/{v_name}",
+              "notes": "\n".join(notes_lines),
+          }
+          Path("app/src/main/assets/version.json").write_text(json.dumps(ver_json, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
           EOF
+
+      - name: Commit bumped version back to repository
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/build.gradle app/src/main/assets/index.html app/src/main/assets/sw.js app/src/main/assets/version.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to ${{ steps.bump.outputs.version_name }} (${{ steps.bump.outputs.version_code }}) [skip ci]"
+            git pull --rebase --autostash origin "${{ github.ref_name }}"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -199,11 +208,3 @@ jobs:
           body_path: release_notes.md
           generate_release_notes: true
           files: GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk
-
-      - name: Deploy PWA to Cloudflare Pages (gesits.pages.dev)
-        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != ''
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy app/src/main/assets --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'gesits' }} --branch=${{ github.ref_name }}

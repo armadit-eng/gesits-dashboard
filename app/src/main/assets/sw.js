@@ -8,7 +8,7 @@
 
 // Naikkan VERSION ini setiap kali deploy perubahan baru ke GitHub.
 // Browser bakal deteksi sw.js berubah → toast "Update tersedia" muncul di app.
-const VERSION     = 'v1.0.1.23';
+const VERSION     = 'v1.0.1.24';
 const SHELL_CACHE = `gesits-shell-${VERSION}`;
 const TILE_CACHE  = 'gesits-tiles-v2.5.0';
 const TILE_CACHE_MAX = 600; // batas jumlah tile tersimpan, biar storage HP nggak penuh
@@ -90,8 +90,8 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(req.url); } catch (e) { return; }
 
-  // Data dinamis (rute/geocode/cuaca/elevasi) → selalu network langsung
-  if (hostMatches(url.hostname, NO_CACHE_HOSTS)) return;
+  // Data dinamis (rute/geocode/cuaca/elevasi/version.json) → selalu network langsung
+  if (hostMatches(url.hostname, NO_CACHE_HOSTS) || url.pathname.endsWith('/version.json')) return;
 
   // Tile peta → cache-first, simpan hasil baru ke tile cache (dengan batas ukuran)
   if (hostMatches(url.hostname, TILE_HOSTS)) {

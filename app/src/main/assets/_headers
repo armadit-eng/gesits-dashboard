@@ -1,0 +1,6 @@
+/version.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: no-store, max-age=0
+
+/charging_molis_indonesia.json
+  Access-Control-Allow-Origin: *

@@ -341,7 +341,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getAppVersion() {
             // Dipakai JS buat bandingin versi APK yang ke-install sekarang vs
-            // versi terbaru di GitHub Releases (armadit-eng/dashboard-app),
+            // versi terbaru di GitHub Releases (armadit-eng/gesits-dashboard),
             // biar status "Aplikasi" di Akun & Home selalu cek update APK asli.
             try {
                 PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
