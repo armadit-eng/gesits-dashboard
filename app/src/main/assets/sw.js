@@ -16,6 +16,7 @@ const TILE_CACHE_MAX = 600; // batas jumlah tile tersimpan, biar storage HP ngga
 const SHELL_FILES = [
   './',
   './index.html',
+  './charging_molis_indonesia.json',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

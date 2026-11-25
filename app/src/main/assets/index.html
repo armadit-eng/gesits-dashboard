@@ -1099,6 +1099,12 @@ body.nav-fullscreen .nav-searchbar{left:56px}
   padding:8px 4px;font-size:11.5px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit
 }
 .np-radius-chip.active{border-color:var(--green);color:var(--green);background:rgba(var(--green-rgb),.1)}
+.molis-stat-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:11px;line-height:1.45}
+.molis-stat-row{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.molis-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:rgba(var(--green-rgb),.14);color:var(--green)}
+.molis-pill.warn{background:rgba(255,179,0,.15);color:#ffb300}
+.molis-pill.err{background:rgba(255,82,82,.15);color:var(--danger)}
+.charging-marker.molis{border-color:#00e5ff;color:#00e5ff;box-shadow:0 0 7px rgba(0,229,255,0.65)}
 
 /* Destination panel */
 .dest-panel{
@@ -4128,15 +4134,78 @@ function motoImgFallback(img){
 <div class="np-sheet-bg" id="spkluSheet" onclick="if(event.target===this)closeNpSheet('spkluSheet')">
   <div class="np-sheet">
     <div class="np-sheet-hdr">
-      <div class="np-sheet-title">SPKLU Terdekat</div>
+      <div class="np-sheet-title">SPKLU &amp; Molis Terdekat</div>
       <button class="np-sheet-close" onclick="closeNpSheet('spkluSheet')">✕</button>
     </div>
     <div class="np-sheet-body">
+      <div id="spkluMolisSummary" class="molis-stat-card" style="padding:8px 10px;margin-bottom:8px">
+        <div class="molis-stat-row">
+          <span style="font-weight:700">⚡ Database Molis</span>
+          <span class="molis-pill" id="spkluMolisCountPill">Memuat…</span>
+        </div>
+        <div id="spkluMolisSyncSub" style="font-size:10px;color:var(--muted);margin-top:3px">Menyiapkan data stasiun charging…</div>
+      </div>
       <div id="spkluSheetList"><div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Mencari SPKLU terdekat…</div></div>
       <button class="dash-link-btn" style="justify-content:center" onclick="closeNpSheet('spkluSheet');toggleChargingStations()">Lihat semua SPKLU di peta <span>›</span></button>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn-std" style="flex:1" onclick="catatOpenSpklu()">+ Tambah SPKLU</button>
-        <button class="btn-std" style="flex:1" onclick="closeNpSheet('spkluSheet');catatOpenList()">Catatan saya</button>
+        <button class="btn-std" style="flex:1" onclick="closeNpSheet('spkluSheet');openMolisImportModal()">📥 Import / Sync</button>
+      </div>
+      <button class="btn-std" style="width:100%;margin-top:8px;justify-content:center" onclick="closeNpSheet('spkluSheet');catatOpenList()">Catatan saya</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT & SYNC DATA CHARGING MOLIS modal ══ -->
+<div class="np-sheet-bg" id="molisImportSheet" onclick="if(event.target===this)closeNpSheet('molisImportSheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title">Import &amp; Sync Charging Molis</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('molisImportSheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div class="molis-stat-card" id="molisImportStatusCard">
+        <div class="molis-stat-row">
+          <span style="font-weight:700">Ringkasan Data Tersimpan</span>
+          <span class="molis-pill" id="molisSyncBadge">Siap</span>
+        </div>
+        <div id="molisStatsDetail" style="color:var(--muted);margin-top:5px;font-size:10.5px">Memuat statistik…</div>
+      </div>
+
+      <div style="font-size:12px;font-weight:700;margin:8px 0 6px">1. Import File Lokal</div>
+      <div class="preset-row" style="margin-bottom:8px">
+        <button type="button" class="preset-btn active" id="molisModeMergeBtn" onclick="setMolisImportMode('merge')">Gabung (Merge)</button>
+        <button type="button" class="preset-btn" id="molisModeReplaceBtn" onclick="setMolisImportMode('replace')">Ganti Data Import</button>
+      </div>
+      <input id="molisImportFile" type="file" accept=".json,.geojson,.kml,.csv,.gpx,.txt,application/json,application/vnd.google-earth.kml+xml,text/csv,application/gpx+xml,text/plain" style="display:none" onchange="handleMolisFileImport(this)">
+      <div style="display:flex;gap:8px">
+        <button class="modal-btn primary" style="flex:1.4" onclick="document.getElementById('molisImportFile').click()">📂 Pilih File (JSON / KML / CSV / GPX)</button>
+        <button class="btn-std" style="flex:0.8" onclick="exportMolisJson()">Ekspor JSON</button>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.45;margin-top:6px">
+        Mendukung <b>JSON</b>, <b>GeoJSON</b>, <b>KML</b> (Google My Maps), <b>CSV</b> (termasuk Google Takeout dgn koordinat/URL), dan <b>GPX</b> (&lt;wpt&gt;).
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);flex:1;cursor:pointer">
+          <input id="molisIncludeBundledChk" type="checkbox" style="width:16px;height:16px;flex:none" onchange="toggleMolisIncludeBundled(this.checked)"> Sertakan data bawaan Indonesia
+        </label>
+        <button class="btn-std text-danger" id="molisClearImportBtn" style="padding:6px 10px;font-size:11px" onclick="clearMolisImportedData()">Hapus Import</button>
+      </div>
+
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:700;margin-bottom:6px">2. Sinkronisasi Latar Belakang (URL)</div>
+        <div class="uuid-field" style="margin-bottom:8px">
+          <label>URL Feed Data (JSON / GeoJSON / KML / CSV / GPX)</label>
+          <input id="molisSyncUrlInput" type="url" autocomplete="off" placeholder="https://raw.githubusercontent.com/.../charging_molis_indonesia.json" style="font-family:inherit;font-size:11px">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);margin-bottom:9px;cursor:pointer">
+          <input id="molisAutoSyncChk" type="checkbox" style="width:16px;height:16px;flex:none" onchange="toggleMolisAutoSync(this.checked)"> Sinkronisasi otomatis di latar belakang saat app dibuka
+        </label>
+        <div style="display:flex;gap:8px">
+          <button class="btn-std" style="flex:1" onclick="saveMolisSyncUrlFromUi()">Simpan URL</button>
+          <button class="modal-btn primary" style="flex:1.2" id="molisSyncNowBtn" onclick="syncMolisNowFromUi()">🔄 Sync Sekarang</button>
+        </div>
+        <div id="molisSyncLastMsg" style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4"></div>
       </div>
     </div>
   </div>
@@ -5908,6 +5977,18 @@ if(IS_NATIVE_ANDROID){
     setTimeout(checkNativeAppVersion, 4000);
   });
 }
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Muat cache data charging Molis lokal & jalankan sinkronisasi latar belakang
+  // non-blocking setelah inisialisasi awal app selesai.
+  setTimeout(()=>{
+    try{
+      if(typeof initMolisChargingWorkflow === 'function') initMolisChargingWorkflow();
+    }catch(e){
+      console.warn('initMolisChargingWorkflow error:', e);
+    }
+  }, 2200);
+});
 
 // ── Dialog "Update Tersedia" ──
 // Muncul otomatis pas app dibuka & ada versi baru: nampilin nomor versi +
@@ -14931,12 +15012,30 @@ async function _refreshSpkluAhead(){
   if(Date.now() - _spkluAheadTs < 120000) return;
   _spkluAheadBusy = true;
   try{
-    const list = await fetchOsmSpklu(userLat, userLng);
+    const localMolis = (typeof getNearbyMolisElements === 'function')
+      ? await getNearbyMolisElements(userLat, userLng, 60000)
+      : [];
+    const userOwn = (typeof userSpkluElements === 'function') ? userSpkluElements() : [];
+    const osmList = await Promise.race([
+      fetchOsmSpklu(userLat, userLng).catch(()=>null),
+      new Promise(r=>setTimeout(()=>r(null), 3500))
+    ]);
+    const list = [];
+    const addUnique = (arr)=>{
+      if(!Array.isArray(arr)) return;
+      for(const el of arr){
+        if(!el || el.available===false) continue;
+        if(list.some(x=>haversine(x.lat,x.lon,el.lat,el.lon)<60)) continue;
+        list.push(el);
+      }
+    };
+    addUnique(userOwn);
+    addUnique(localMolis);
+    addUnique(osmList);
     let best = null;
-    if(list && list.length){
+    if(list.length){
       const prog = navProgressCum(), remM = calcRemainingDist() || 0;
       for(const el of list){
-        if(el.available===false) continue;
         if(minDistanceFromRoute(el.lon, el.lat, routeCoords) > 1500) continue;
         let bi=0, bd=Infinity;                                   // vertex rute terdekat → posisi sepanjang rute
         for(let i=0;i<routeCoords.length;i++){
@@ -17039,24 +17138,784 @@ function updateAkunOfflineMapStrip(count, sizeMB){
   }
 }
 
+// ── DATABASE CHARGING MOLIS (Bawaan + Sync URL + Import JSON/KML/CSV/GPX) ──
+const MOLIS_DEFAULT_SYNC_URL = 'https://raw.githubusercontent.com/armadit-eng/dashboard-app/main/app/src/main/assets/charging_molis_indonesia.json';
+const MOLIS_FALLBACK_SYNC_URL = 'https://raw.githubusercontent.com/armadit-eng/Gesits-Classic/main/app/src/main/assets/charging_molis_indonesia.json';
+const MOLIS_LS_URL_KEY = 'molis_sync_url';
+const MOLIS_LS_AUTOSYNC_KEY = 'molis_sync_enabled';
+const MOLIS_LS_BUNDLED_KEY = 'molis_include_bundled';
+const MOLIS_LS_META_KEY = 'molis_sync_meta';
+const MOLIS_LS_IMPORT_FALLBACK = 'molis_imported_stations_v1';
+const MOLIS_LS_SYNC_FALLBACK = 'molis_synced_stations_v1';
+
+let _molisBundledCache = null;
+let _molisSyncedCache = null;
+let _molisImportedCache = null;
+let _molisLoadPromise = null;
+let _molisSyncBusy = false;
+let _molisImportMode = 'merge';
+const _molisNativeFetchPending = {};
+
+window.__onNativeFetchDone = function(requestId, ok, status, etag, errorMsg){
+  const cb = _molisNativeFetchPending[requestId];
+  if(!cb) return;
+  delete _molisNativeFetchPending[requestId];
+  cb({ ok: !!ok, status: Number(status)||0, etag: etag||'', error: errorMsg||'' });
+};
+
+function _molisOpenDb(){
+  return new Promise((resolve, reject)=>{
+    if(typeof indexedDB === 'undefined') return reject(new Error('No IndexedDB'));
+    const req = indexedDB.open('gesits_molis', 1);
+    req.onupgradeneeded = ()=>{
+      const db = req.result;
+      if(!db.objectStoreNames.contains('datasets')) db.createObjectStore('datasets');
+    };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error || new Error('IDB error'));
+  });
+}
+async function _molisIdbGet(key, lsFallbackKey){
+  try{
+    const db = await _molisOpenDb();
+    return await new Promise((resolve)=>{
+      const tx = db.transaction('datasets', 'readonly');
+      const r = tx.objectStore('datasets').get(key);
+      r.onsuccess = ()=>resolve(Array.isArray(r.result) ? r.result : null);
+      r.onerror = ()=>resolve(null);
+    });
+  }catch(e){
+    try{
+      const raw = localStorage.getItem(lsFallbackKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Array.isArray(parsed) ? parsed : null;
+    }catch(_){ return null; }
+  }
+}
+async function _molisIdbSet(key, arr, lsFallbackKey){
+  try{
+    const db = await _molisOpenDb();
+    await new Promise((resolve, reject)=>{
+      const tx = db.transaction('datasets', 'readwrite');
+      tx.objectStore('datasets').put(arr, key);
+      tx.oncomplete = ()=>resolve();
+      tx.onerror = ()=>reject(tx.error);
+    });
+    return;
+  }catch(e){}
+  try{ localStorage.setItem(lsFallbackKey, JSON.stringify(arr)); }catch(_){}
+}
+
+function getMolisSyncUrl(){
+  try{
+    const v = localStorage.getItem(MOLIS_LS_URL_KEY);
+    if(v !== null) return v.trim();
+  }catch(e){}
+  return MOLIS_DEFAULT_SYNC_URL;
+}
+function setMolisSyncUrl(u){
+  try{ localStorage.setItem(MOLIS_LS_URL_KEY, String(u||'').trim()); }catch(e){}
+}
+function isMolisAutoSyncEnabled(){
+  try{ return localStorage.getItem(MOLIS_LS_AUTOSYNC_KEY) !== '0'; }catch(e){ return true; }
+}
+function isMolisIncludeBundled(){
+  try{ return localStorage.getItem(MOLIS_LS_BUNDLED_KEY) !== '0'; }catch(e){ return true; }
+}
+function getMolisSyncMeta(){
+  try{
+    const raw = localStorage.getItem(MOLIS_LS_META_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function setMolisSyncMeta(patch){
+  const cur = getMolisSyncMeta();
+  const next = Object.assign({}, cur, patch);
+  try{ localStorage.setItem(MOLIS_LS_META_KEY, JSON.stringify(next)); }catch(e){}
+  return next;
+}
+
+function _molisExtractCoordsFromText(txt){
+  if(!txt) return null;
+  const s = String(txt);
+  const patterns = [
+    /@(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /[?&](?:q|ll|query|center)=(-?\d{1,2}\.\d+)\s*[,+\s]\s*(-?\d{1,3}\.\d+)/i,
+    /(-?\d{1,2}\.\d{3,})\s*[,;\s]\s*(-?\d{1,3}\.\d{3,})/
+  ];
+  for(const re of patterns){
+    const m = s.match(re);
+    if(m){
+      const lat = parseFloat(m[1]), lon = parseFloat(m[2]);
+      if(_molisValidCoord(lat, lon)) return { lat, lon };
+    }
+  }
+  return null;
+}
+function _molisValidCoord(lat, lon){
+  return Number.isFinite(lat) && Number.isFinite(lon)
+    && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180
+    && !(Math.abs(lat) < 0.0001 && Math.abs(lon) < 0.0001);
+}
+function _molisParseKw(v){
+  if(v == null || v === '') return 0;
+  if(typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v).trim().replace(',', '.');
+  const n = parseFloat(s);
+  if(!Number.isFinite(n) || n <= 0) return 0;
+  if(/(?:\d|\s)(?:watt|w)\b/i.test(s) && !/kw/i.test(s) && n >= 100) return +(n / 1000).toFixed(2);
+  return n;
+}
+function _molisNormalizeItem(raw, defaultSource){
+  if(!raw || typeof raw !== 'object') return null;
+  let lat = parseFloat(raw.lat ?? raw.latitude ?? raw.Latitude ?? raw.LAT ?? raw.y);
+  let lon = parseFloat(raw.lon ?? raw.lng ?? raw.longitude ?? raw.Longitude ?? raw.LNG ?? raw.LON ?? raw.x);
+  if(!_molisValidCoord(lat, lon) && raw.geometry && Array.isArray(raw.geometry.coordinates)){
+    const c = raw.geometry.coordinates;
+    if(typeof c[0] === 'number' && typeof c[1] === 'number'){
+      lon = c[0]; lat = c[1];
+    }
+  }
+  if(!_molisValidCoord(lat, lon)){
+    const probe = _molisExtractCoordsFromText(
+      raw.url || raw.URL || raw.link || raw.maps_url || raw.coords || raw.coordinates || raw.location || raw.notes || raw.note || raw.Note || ''
+    );
+    if(probe){ lat = probe.lat; lon = probe.lon; }
+  }
+  if(!_molisValidCoord(lat, lon)) return null;
+
+  const name = String(raw.name ?? raw.title ?? raw.Title ?? raw.nama ?? raw.Nama ?? raw.stationName ?? raw.place_name ?? 'SPKLU Molis').trim() || 'SPKLU Molis';
+  const operator = String(raw.operatorName ?? raw.operator ?? raw.Operator ?? raw.provider ?? raw.owner ?? raw.brand ?? '').trim();
+  const types = String(raw.socketType ?? raw.socket ?? raw.types ?? raw.connector ?? raw.konektor ?? raw.sambungan ?? '').trim();
+  const addr = String(raw.addr ?? raw.address ?? raw.alamat ?? raw.notes ?? raw.note ?? raw.Note ?? raw.catatan ?? raw.description ?? raw.desc ?? raw.Comment ?? '').trim();
+  const usageCost = String(raw.usageCost ?? raw.cost ?? raw.biaya ?? raw.fee ?? raw.price ?? '').trim();
+  const maxKw = _molisParseKw(raw.powerKw ?? raw.maxKw ?? raw.kw ?? raw.power ?? raw.daya);
+  const avail = raw.available === false || String(raw.status||'').toLowerCase() === 'inactive' ? false : true;
+  const isMolisFriendly = raw.isMolisFriendly !== undefined ? !!raw.isMolisFriendly : true;
+  const sourceLabel = String(raw.sourceLabel || defaultSource || 'Molis').trim();
+  const id = String(raw.id || ('molis_' + Math.round(lat * 1e5) + '_' + Math.round(lon * 1e5)));
+  return {
+    id, lat, lon, name, operator, addr, types, maxKw,
+    opCount: parseInt(raw.opCount || raw.connectors || 0, 10) || 0,
+    available: avail, usageCost, dist: 0,
+    isMolis: true, isMolisFriendly, sourceLabel,
+    userAdded: !!raw.isUserAdded || sourceLabel.startsWith('Import')
+  };
+}
+
+function _molisDedupList(items){
+  const out = [];
+  const seenIds = new Set();
+  for(const item of items){
+    if(!item || !_molisValidCoord(item.lat, item.lon)) continue;
+    if(item.id && seenIds.has(item.id)) continue;
+    if(out.some(e => Math.abs(e.lat - item.lat) < 0.00045 && Math.abs(e.lon - item.lon) < 0.00045 && haversine(e.lat, e.lon, item.lat, item.lon) < 45)) continue;
+    if(item.id) seenIds.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+function _molisFirstPointFromGeoJsonGeom(geom){
+  if(!geom) return null;
+  const c = geom.coordinates;
+  if(!c) return null;
+  if(geom.type === 'Point' && Array.isArray(c) && c.length >= 2) return [Number(c[1]), Number(c[0])];
+  const findPair = (arr)=>{
+    if(!Array.isArray(arr) || !arr.length) return null;
+    if(typeof arr[0] === 'number' && typeof arr[1] === 'number') return [arr[1], arr[0]];
+    for(const sub of arr){ const p = findPair(sub); if(p) return p; }
+    return null;
+  };
+  return findPair(c);
+}
+
+function parseMolisJson(text, sourceLabel){
+  const clean = String(text||'').replace(/^\uFEFF/, '').trim();
+  if(!clean) throw new Error('File JSON kosong');
+  const parsed = JSON.parse(clean);
+  const items = [];
+  if(Array.isArray(parsed)){
+    for(const row of parsed){
+      const n = _molisNormalizeItem(row, sourceLabel);
+      if(n) items.push(n);
+    }
+  } else if(parsed && typeof parsed === 'object'){
+    if(parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)){
+      for(const f of parsed.features){
+        const pt = _molisFirstPointFromGeoJsonGeom(f && f.geometry);
+        const props = Object.assign({}, (f && f.properties) || {});
+        if(pt){ props.lat = pt[0]; props.lon = pt[1]; }
+        if(f && f.id && !props.id) props.id = String(f.id);
+        const n = _molisNormalizeItem(props, sourceLabel);
+        if(n) items.push(n);
+      }
+    } else {
+      const arr = parsed.stations || parsed.data || parsed.items || parsed.results || parsed.points || parsed.features;
+      if(Array.isArray(arr)){
+        for(const row of arr){
+          const n = _molisNormalizeItem(row, sourceLabel);
+          if(n) items.push(n);
+        }
+      } else {
+        const single = _molisNormalizeItem(parsed, sourceLabel);
+        if(single) items.push(single);
+      }
+    }
+  }
+  return _molisDedupList(items);
+}
+
+function _parseCsvRows(text, delim){
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  for(let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if(inQ){
+      if(ch === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else inQ = false;
+      } else {
+        field += ch;
+      }
+    } else {
+      if(ch === '"'){ inQ = true; }
+      else if(ch === delim){ row.push(field); field = ''; }
+      else if(ch === '\r'){ if(text[i+1] === '\n') i++; row.push(field); rows.push(row); row = []; field = ''; }
+      else if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; }
+      else { field += ch; }
+    }
+  }
+  if(field.length || row.length){ row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+
+function parseMolisCsv(text, sourceLabel){
+  const clean = String(text||'').replace(/^\uFEFF/, '').trim();
+  if(!clean) throw new Error('File CSV kosong');
+  const firstLine = clean.split(/\r?\n/, 1)[0] || '';
+  const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';'
+              : (firstLine.split('\t').length > firstLine.split(',').length) ? '\t' : ',';
+  const rows = _parseCsvRows(clean, delim);
+  if(!rows.length) return [];
+
+  const first = rows[0].map(c => String(c).trim());
+  const looksHeader = first.some(h => /^(name|nama|title|lat|latitude|lng|lon|longitude|url|operator|socket|notes|note|alamat)$/i.test(h.replace(/\s+/g,'')));
+  const items = [];
+  if(looksHeader){
+    const keys = first.map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, ''));
+    for(let r = 1; r < rows.length; r++){
+      const row = rows[r];
+      const obj = {};
+      for(let c = 0; c < keys.length; c++){
+        const k = keys[c];
+        if(!k) continue;
+        const val = (row[c] !== undefined) ? String(row[c]).trim() : '';
+        if(!val) continue;
+        if(['name','nama','title','placename','stationname'].includes(k)) obj.name = val;
+        else if(['lat','latitude','y'].includes(k)) obj.lat = val;
+        else if(['lng','lon','longitude','long','x'].includes(k)) obj.lon = val;
+        else if(['operator','operatorname','provider','owner','brand'].includes(k)) obj.operatorName = val;
+        else if(['socket','sockettype','types','connector','konektor','sambungan'].includes(k)) obj.socketType = val;
+        else if(['kw','powerkw','maxkw','power','daya'].includes(k)) obj.powerKw = val;
+        else if(['notes','note','catatan','addr','address','alamat','description','desc','comment'].includes(k)) obj.notes = obj.notes ? (obj.notes + ' · ' + val) : val;
+        else if(['url','link','mapsurl','googlemapsurl'].includes(k)) obj.url = val;
+        else if(['cost','biaya','usagecost','fee','price'].includes(k)) obj.usageCost = val;
+        else if(['wkt','geometry'].includes(k)) obj.coords = val;
+      }
+      const n = _molisNormalizeItem(obj, sourceLabel);
+      if(n) items.push(n);
+    }
+  } else {
+    for(const row of rows){
+      let obj = null;
+      if(row.length >= 3 && !isNaN(parseFloat(row[1])) && !isNaN(parseFloat(row[2]))){
+        obj = { name: row[0], lat: row[1], lon: row[2], notes: row.slice(3).join(' · ') };
+      } else if(row.length >= 2 && !isNaN(parseFloat(row[0])) && !isNaN(parseFloat(row[1]))){
+        obj = { name: row[2] || 'SPKLU Molis', lat: row[0], lon: row[1], notes: row.slice(3).join(' · ') };
+      } else {
+        obj = { name: row[0] || 'SPKLU Molis', notes: row.join(' · '), url: row.find(c => /http/i.test(c)) || '' };
+      }
+      const n = _molisNormalizeItem(obj, sourceLabel);
+      if(n) items.push(n);
+    }
+  }
+  return _molisDedupList(items);
+}
+
+function _stripHtmlTags(s){
+  if(!s) return '';
+  return String(s).replace(/<br\s*\/?>/gi, ' · ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function _xmlFirstText(parent, tag){
+  const list = parent.getElementsByTagNameNS ? parent.getElementsByTagNameNS('*', tag) : parent.getElementsByTagName(tag);
+  if(list && list.length) return (list[0].textContent || '').trim();
+  const fb = parent.getElementsByTagName(tag);
+  return (fb && fb.length) ? (fb[0].textContent || '').trim() : '';
+}
+
+function parseMolisKml(text, sourceLabel){
+  const doc = new DOMParser().parseFromString(String(text||'').trim(), 'text/xml');
+  if(doc.getElementsByTagName('parsererror').length) throw new Error('Format XML/KML tidak valid');
+  let marks = doc.getElementsByTagNameNS ? doc.getElementsByTagNameNS('*', 'Placemark') : [];
+  if(!marks || !marks.length) marks = doc.getElementsByTagName('Placemark');
+  const items = [];
+  for(let i = 0; i < marks.length; i++){
+    const pm = marks[i];
+    const name = _xmlFirstText(pm, 'name') || 'SPKLU Molis';
+    const desc = _stripHtmlTags(_xmlFirstText(pm, 'description'));
+    const coordStr = _xmlFirstText(pm, 'coordinates');
+    if(!coordStr) continue;
+    const firstCoord = coordStr.trim().split(/\s+/)[0];
+    const parts = firstCoord.split(',').map(x => parseFloat(x));
+    if(parts.length < 2) continue;
+    const lon = parts[0], lat = parts[1];
+    const ext = {};
+    const dataEls = pm.getElementsByTagNameNS ? pm.getElementsByTagNameNS('*', 'Data') : pm.getElementsByTagName('Data');
+    for(let d = 0; d < dataEls.length; d++){
+      const k = (dataEls[d].getAttribute('name') || '').toLowerCase();
+      const v = _xmlFirstText(dataEls[d], 'value');
+      if(k && v) ext[k] = _stripHtmlTags(v);
+    }
+    const obj = {
+      name, lat, lon,
+      operatorName: ext.operator || ext.provider || ext.owner || '',
+      socketType: ext.socket || ext.sockettype || ext.konektor || ext.types || '',
+      powerKw: ext.kw || ext.powerkw || ext.daya || '',
+      notes: desc || ext.notes || ext.catatan || ext.alamat || ext.address || '',
+      usageCost: ext.cost || ext.biaya || ''
+    };
+    const n = _molisNormalizeItem(obj, sourceLabel);
+    if(n) items.push(n);
+  }
+  return _molisDedupList(items);
+}
+
+function parseMolisGpx(text, sourceLabel){
+  const doc = new DOMParser().parseFromString(String(text||'').trim(), 'text/xml');
+  if(doc.getElementsByTagName('parsererror').length) throw new Error('Format XML/GPX tidak valid');
+  let wpts = doc.getElementsByTagNameNS ? doc.getElementsByTagNameNS('*', 'wpt') : [];
+  if(!wpts || !wpts.length) wpts = doc.getElementsByTagName('wpt');
+  const items = [];
+  for(let i = 0; i < wpts.length; i++){
+    const w = wpts[i];
+    const lat = parseFloat(w.getAttribute('lat'));
+    const lon = parseFloat(w.getAttribute('lon'));
+    const name = _xmlFirstText(w, 'name') || 'SPKLU Molis';
+    const desc = _stripHtmlTags(_xmlFirstText(w, 'desc') || _xmlFirstText(w, 'cmt'));
+    const type = _xmlFirstText(w, 'type');
+    const n = _molisNormalizeItem({ name, lat, lon, notes: desc, operatorName: type }, sourceLabel);
+    if(n) items.push(n);
+  }
+  return _molisDedupList(items);
+}
+
+function parseMolisDataset(text, nameOrUrl, sourceLabel){
+  const trimmed = String(text||'').replace(/^\uFEFF/, '').trim();
+  if(!trimmed) throw new Error('Isi file kosong');
+  if(/^<!doctype\s+html|^<html/i.test(trimmed)){
+    throw new Error('URL mengembalikan halaman web HTML, bukan file data (JSON/KML/CSV/GPX)');
+  }
+  const lower = String(nameOrUrl||'').toLowerCase().split('?')[0];
+  let items = [];
+  if(lower.endsWith('.json') || lower.endsWith('.geojson') || trimmed.startsWith('[') || trimmed.startsWith('{')){
+    items = parseMolisJson(trimmed, sourceLabel || 'JSON');
+  } else if(lower.endsWith('.kml') || /<kml[\s>]/i.test(trimmed) || /<Placemark[\s>]/i.test(trimmed)){
+    items = parseMolisKml(trimmed, sourceLabel || 'KML');
+  } else if(lower.endsWith('.gpx') || /<gpx[\s>]/i.test(trimmed) || /<wpt[\s>]/i.test(trimmed)){
+    items = parseMolisGpx(trimmed, sourceLabel || 'GPX');
+  } else {
+    items = parseMolisCsv(trimmed, sourceLabel || 'CSV');
+  }
+  if(!items.length){
+    throw new Error('Tidak ditemukan titik charging dengan koordinat valid');
+  }
+  return items;
+}
+
+async function ensureMolisLoaded(){
+  if(_molisLoadPromise) return _molisLoadPromise;
+  _molisLoadPromise = (async()=>{
+    try{
+      if(_molisBundledCache === null){
+        try{
+          const res = await fetch('./charging_molis_indonesia.json');
+          if(res.ok){
+            const raw = await res.json();
+            _molisBundledCache = (Array.isArray(raw) ? raw : [])
+              .map(r => _molisNormalizeItem(r, r.sourceLabel || 'GMap Molis'))
+              .filter(Boolean);
+          } else {
+            _molisBundledCache = [];
+          }
+        }catch(e){ _molisBundledCache = []; }
+      }
+      if(_molisSyncedCache === null){
+        _molisSyncedCache = (await _molisIdbGet('synced', MOLIS_LS_SYNC_FALLBACK)) || [];
+      }
+      if(_molisImportedCache === null){
+        _molisImportedCache = (await _molisIdbGet('imported', MOLIS_LS_IMPORT_FALLBACK)) || [];
+      }
+    }catch(e){
+      _molisBundledCache = _molisBundledCache || [];
+      _molisSyncedCache = _molisSyncedCache || [];
+      _molisImportedCache = _molisImportedCache || [];
+    }
+  })();
+  return _molisLoadPromise;
+}
+
+async function getAllMolisElements(){
+  await ensureMolisLoaded();
+  const combined = [];
+  if(Array.isArray(_molisImportedCache)) combined.push(..._molisImportedCache);
+  if(Array.isArray(_molisSyncedCache)) combined.push(..._molisSyncedCache);
+  if(isMolisIncludeBundled() && Array.isArray(_molisBundledCache)) combined.push(..._molisBundledCache);
+  return _molisDedupList(combined);
+}
+
+async function getNearbyMolisElements(lat, lng, radiusMeters){
+  const all = await getAllMolisElements();
+  if(lat == null || lng == null) return all;
+  const maxM = radiusMeters || 75000;
+  return all.filter(el => haversine(lat, lng, el.lat, el.lon) <= maxM);
+}
+
+function _nativeFetchText(url, etag){
+  return new Promise((resolve, reject)=>{
+    if(IS_NATIVE_ANDROID && window.Android && typeof Android.fetchRemoteText === 'function'){
+      const reqId = 'mf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      const timer = setTimeout(()=>{
+        if(_molisNativeFetchPending[reqId]){
+          delete _molisNativeFetchPending[reqId];
+          reject(new Error('Timeout saat menghubungi server'));
+        }
+      }, 30000);
+      _molisNativeFetchPending[reqId] = async (meta)=>{
+        clearTimeout(timer);
+        if(!meta.ok){
+          reject(new Error(meta.error || ('HTTP ' + meta.status)));
+          return;
+        }
+        if(meta.status === 304){
+          resolve({ notModified: true, status: 304, etag: meta.etag || etag || '', text: '' });
+          return;
+        }
+        try{
+          const r = await fetch('https://appassets.androidplatform.net/molis-fetch/' + encodeURIComponent(reqId));
+          if(!r.ok) throw new Error('HTTP lokal ' + r.status);
+          const text = await r.text();
+          resolve({ notModified: false, status: meta.status, etag: meta.etag || '', text });
+        }catch(e){ reject(e); }
+      };
+      Android.fetchRemoteText(reqId, url, etag || '');
+    } else {
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const timer = setTimeout(()=>{ try{ ctl && ctl.abort(); }catch(e){} }, 22000);
+      const headers = etag ? { 'If-None-Match': etag } : {};
+      fetch(url, { headers, signal: ctl ? ctl.signal : undefined })
+        .then(async res => {
+          clearTimeout(timer);
+          if(res.status === 304) return { notModified: true, status: 304, etag: res.headers.get('ETag') || etag || '', text: '' };
+          if(!res.ok) throw new Error('HTTP ' + res.status);
+          const text = await res.text();
+          return { notModified: false, status: res.status, etag: res.headers.get('ETag') || '', text };
+        })
+        .then(resolve)
+        .catch(e => { clearTimeout(timer); reject(e); });
+    }
+  });
+}
+
+function _isInteractiveMapsWebUrl(u){
+  const low = String(u||'').toLowerCase();
+  if(/maps\/d\/.*kml|output=kml/i.test(low)) return false;
+  return /maps\.app\.goo\.gl|goo\.gl\/maps|share\.google\/|^https?:\/\/(www\.)?google\.[a-z.]+\/maps/i.test(low);
+}
+
+async function runMolisBackgroundSync(opts){
+  const silent = !(opts && opts.silent === false);
+  const force = !!(opts && opts.force);
+  if(_molisSyncBusy) return false;
+  const url = getMolisSyncUrl();
+  if(!url){
+    if(!silent) showToast('⚠️ Isi URL Sync terlebih dahulu');
+    return false;
+  }
+  if(_isInteractiveMapsWebUrl(url)){
+    const msg = 'Link Google Maps adalah halaman web interaktif, bukan feed data mentah. Gunakan URL file JSON/KML/CSV/GPX (mis. GitHub Raw) atau Import File.';
+    setMolisSyncMeta({ lastSyncTs: Date.now(), lastStatus: 'info', lastError: msg });
+    refreshMolisUiStatus();
+    if(!silent) showToast('ℹ️ Gunakan URL file mentah atau menu Import File');
+    return false;
+  }
+  _molisSyncBusy = true;
+  refreshMolisUiStatus();
+  try{
+    await ensureMolisLoaded();
+    const meta = getMolisSyncMeta();
+    const useEtag = (!force && meta.lastSourceUrl === url && Array.isArray(_molisSyncedCache) && _molisSyncedCache.length > 0) ? (meta.etag || '') : '';
+    let res;
+    try{
+      res = await _nativeFetchText(url, useEtag);
+    }catch(primaryErr){
+      if(url === MOLIS_DEFAULT_SYNC_URL){
+        res = await _nativeFetchText(MOLIS_FALLBACK_SYNC_URL, useEtag);
+      } else {
+        throw primaryErr;
+      }
+    }
+    if(res.notModified){
+      setMolisSyncMeta({ lastSyncTs: Date.now(), lastStatus: 'ok', lastError: '', lastSourceUrl: url });
+      refreshMolisUiStatus();
+      if(!silent) showToast('✅ Data Molis sudah terbaru');
+      return true;
+    }
+    const items = parseMolisDataset(res.text, url, 'Sync URL');
+    _molisSyncedCache = items;
+    await _molisIdbSet('synced', items, MOLIS_LS_SYNC_FALLBACK);
+    setMolisSyncMeta({
+      lastSyncTs: Date.now(),
+      lastStatus: 'ok',
+      lastCount: items.length,
+      lastError: '',
+      etag: res.etag || '',
+      lastSourceUrl: url
+    });
+    lastChargingResults = [];
+    _spkluAheadTs = 0;
+    refreshMolisUiStatus();
+    if(document.getElementById('spkluSheet')?.classList.contains('show') && userLat != null){
+      await fetchChargingStations({ quiet: true });
+      renderSpkluSheetList();
+    } else if(chargingActive && mapInstance && userLat != null){
+      fetchChargingStations({ quiet: true });
+    }
+    if(!silent) showToast(`✅ Sync selesai: ${items.length} titik charging Molis`);
+    else log(`Sync Molis background: ${items.length} titik`, 'ok');
+    return true;
+  }catch(e){
+    const errMsg = e && e.message ? e.message : 'Gagal sinkronisasi';
+    setMolisSyncMeta({ lastSyncTs: Date.now(), lastStatus: 'error', lastError: errMsg, lastSourceUrl: url });
+    refreshMolisUiStatus();
+    if(!silent) showToast('⚠️ Sync gagal: ' + errMsg);
+    else log('Sync Molis gagal (pakai cache lokal): ' + errMsg, 'sys');
+    return false;
+  }finally{
+    _molisSyncBusy = false;
+    refreshMolisUiStatus();
+  }
+}
+
+async function initMolisChargingWorkflow(){
+  await ensureMolisLoaded();
+  refreshMolisUiStatus();
+  if(isMolisAutoSyncEnabled()){
+    await runMolisBackgroundSync({ silent: true });
+  }
+}
+
+function _fmtMolisTime(ts){
+  if(!ts) return 'Belum pernah';
+  try{
+    const d = new Date(ts);
+    return d.toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) + ' ' +
+           d.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+  }catch(e){ return 'Baru saja'; }
+}
+
+async function refreshMolisUiStatus(){
+  await ensureMolisLoaded();
+  const bundledCnt = isMolisIncludeBundled() && Array.isArray(_molisBundledCache) ? _molisBundledCache.length : 0;
+  const syncedCnt = Array.isArray(_molisSyncedCache) ? _molisSyncedCache.length : 0;
+  const importedCnt = Array.isArray(_molisImportedCache) ? _molisImportedCache.length : 0;
+  const all = await getAllMolisElements();
+  const meta = getMolisSyncMeta();
+
+  const pill = document.getElementById('spkluMolisCountPill');
+  const sub = document.getElementById('spkluMolisSyncSub');
+  if(pill){
+    pill.textContent = _molisSyncBusy ? 'Sync…' : `${all.length} titik`;
+    pill.className = 'molis-pill' + (_molisSyncBusy ? ' warn' : (meta.lastStatus === 'error' ? ' warn' : ''));
+  }
+  if(sub){
+    if(_molisSyncBusy) sub.textContent = 'Menyinkronkan data terbaru di latar belakang…';
+    else if(meta.lastStatus === 'ok') sub.textContent = `Sync: ${_fmtMolisTime(meta.lastSyncTs)} · Bawaan ${bundledCnt} · Sync ${syncedCnt} · Import ${importedCnt}`;
+    else sub.textContent = `Bawaan ${bundledCnt} · Sync ${syncedCnt} · Import ${importedCnt}`;
+  }
+
+  const badge = document.getElementById('molisSyncBadge');
+  const det = document.getElementById('molisStatsDetail');
+  const lastMsg = document.getElementById('molisSyncLastMsg');
+  const clearBtn = document.getElementById('molisClearImportBtn');
+  if(badge){
+    if(_molisSyncBusy){ badge.textContent = 'Sync…'; badge.className = 'molis-pill warn'; }
+    else if(meta.lastStatus === 'ok'){ badge.textContent = 'Tersinkron'; badge.className = 'molis-pill'; }
+    else if(meta.lastStatus === 'error'){ badge.textContent = 'Offline / Cache'; badge.className = 'molis-pill warn'; }
+    else { badge.textContent = `${all.length} titik`; badge.className = 'molis-pill'; }
+  }
+  if(det){
+    det.innerHTML = `Total unik aktif: <b>${all.length}</b> titik · Bawaan: <b>${bundledCnt}</b> · Sync URL: <b>${syncedCnt}</b> · Import manual: <b>${importedCnt}</b>`;
+  }
+  if(clearBtn) clearBtn.style.display = importedCnt > 0 ? '' : 'none';
+  if(lastMsg){
+    if(_molisSyncBusy) lastMsg.textContent = 'Sedang mengunduh data dari URL…';
+    else if(meta.lastStatus === 'ok') lastMsg.textContent = `Terakhir sinkron: ${_fmtMolisTime(meta.lastSyncTs)} (${meta.lastCount != null ? meta.lastCount + ' titik' : 'tidak berubah'}).`;
+    else if(meta.lastError) lastMsg.textContent = `Terakhir dicoba (${_fmtMolisTime(meta.lastSyncTs)}): ${meta.lastError} — tetap memakai data lokal.`;
+    else lastMsg.textContent = 'Data bawaan Indonesia sudah aktif dan siap offline.';
+  }
+}
+
+function setMolisImportMode(mode){
+  _molisImportMode = mode === 'replace' ? 'replace' : 'merge';
+  document.getElementById('molisModeMergeBtn')?.classList.toggle('active', _molisImportMode === 'merge');
+  document.getElementById('molisModeReplaceBtn')?.classList.toggle('active', _molisImportMode === 'replace');
+}
+
+function openMolisImportModal(){
+  const urlIn = document.getElementById('molisSyncUrlInput');
+  if(urlIn) urlIn.value = getMolisSyncUrl();
+  const autoChk = document.getElementById('molisAutoSyncChk');
+  if(autoChk) autoChk.checked = isMolisAutoSyncEnabled();
+  const bunChk = document.getElementById('molisIncludeBundledChk');
+  if(bunChk) bunChk.checked = isMolisIncludeBundled();
+  setMolisImportMode(_molisImportMode);
+  refreshMolisUiStatus();
+  openNpSheet('molisImportSheet');
+}
+
+async function handleMolisFileImport(inputEl){
+  const file = inputEl && inputEl.files && inputEl.files[0];
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const ext = (file.name.split('.').pop() || 'FILE').toUpperCase();
+    const parsed = parseMolisDataset(text, file.name, 'Import ' + ext);
+    await ensureMolisLoaded();
+    let next;
+    if(_molisImportMode === 'replace'){
+      next = parsed;
+    } else {
+      const existing = Array.isArray(_molisImportedCache) ? _molisImportedCache : [];
+      next = _molisDedupList([...parsed, ...existing]);
+    }
+    _molisImportedCache = next;
+    await _molisIdbSet('imported', next, MOLIS_LS_IMPORT_FALLBACK);
+    lastChargingResults = [];
+    _spkluAheadTs = 0;
+    refreshMolisUiStatus();
+    if(chargingActive && mapInstance && userLat != null){
+      fetchChargingStations({ quiet: true });
+    }
+    showToast(`✅ Berhasil import ${parsed.length} titik (${ext}) · Total import: ${next.length}`);
+  }catch(e){
+    showToast('⚠️ Gagal import: ' + (e && e.message ? e.message : 'Format tidak dikenali'));
+  }finally{
+    if(inputEl) inputEl.value = '';
+  }
+}
+
+async function toggleMolisIncludeBundled(checked){
+  try{ localStorage.setItem(MOLIS_LS_BUNDLED_KEY, checked ? '1' : '0'); }catch(e){}
+  lastChargingResults = [];
+  _spkluAheadTs = 0;
+  await refreshMolisUiStatus();
+  if(chargingActive && mapInstance && userLat != null) fetchChargingStations({ quiet: true });
+  showToast(checked ? '✅ Data bawaan Indonesia diaktifkan' : 'Data bawaan disembunyikan');
+}
+
+async function clearMolisImportedData(){
+  _molisImportedCache = [];
+  await _molisIdbSet('imported', [], MOLIS_LS_IMPORT_FALLBACK);
+  lastChargingResults = [];
+  _spkluAheadTs = 0;
+  await refreshMolisUiStatus();
+  if(chargingActive && mapInstance && userLat != null) fetchChargingStations({ quiet: true });
+  showToast('🗑️ Data import manual dihapus');
+}
+
+async function exportMolisJson(){
+  const all = await getAllMolisElements();
+  if(!all.length){ showToast('Belum ada data charging untuk diekspor'); return; }
+  const payload = all.map(el => ({
+    id: el.id,
+    name: el.name,
+    operatorName: el.operator || '',
+    lat: el.lat,
+    lng: el.lon,
+    socketType: el.types || 'SPLU / Schuko Molis',
+    powerKw: el.maxKw || null,
+    isUserAdded: !!el.userAdded,
+    distanceKm: null,
+    notes: el.addr || '',
+    sourceLabel: el.sourceLabel || 'Molis',
+    isMolisFriendly: el.isMolisFriendly !== false
+  }));
+  const json = JSON.stringify(payload, null, 2);
+  try{
+    if(IS_NATIVE_ANDROID && window.Android && typeof Android.exportFile === 'function'){
+      Android.exportFile('charging_molis_export.json', json, 'application/json');
+      return;
+    }
+  }catch(e){}
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'charging_molis_export.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+  showToast(`📤 Mengekspor ${payload.length} titik JSON`);
+}
+
+function toggleMolisAutoSync(checked){
+  try{ localStorage.setItem(MOLIS_LS_AUTOSYNC_KEY, checked ? '1' : '0'); }catch(e){}
+  showToast(checked ? '🔄 Sync otomatis saat app dibuka: AKTIF' : 'Sync otomatis dimatikan');
+}
+
+function saveMolisSyncUrlFromUi(){
+  const val = (document.getElementById('molisSyncUrlInput')?.value || '').trim();
+  if(val && !/^https?:\/\//i.test(val)){
+    showToast('⚠️ URL harus diawali http:// atau https://');
+    return;
+  }
+  setMolisSyncUrl(val);
+  showToast(val ? '✅ URL Sync disimpan' : 'URL Sync dikosongkan');
+}
+
+async function syncMolisNowFromUi(){
+  const val = (document.getElementById('molisSyncUrlInput')?.value || '').trim();
+  if(!val){
+    showToast('⚠️ Isi URL Sync terlebih dahulu');
+    return;
+  }
+  if(!/^https?:\/\//i.test(val)){
+    showToast('⚠️ URL harus diawali http:// atau https://');
+    return;
+  }
+  setMolisSyncUrl(val);
+  await runMolisBackgroundSync({ silent: false, force: true });
+}
+
 // ── SPKLU Terdekat (reuse fetchChargingStations / lastChargingResults) ──
 function renderSpkluSheetList(){
   const wrap = document.getElementById('spkluSheetList');
   if(!wrap) return;
   const list = (typeof lastChargingResults!=='undefined' ? lastChargingResults : []) || [];
   if(!list.length){
-    wrap.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Belum ada data. Tap tombol di bawah untuk mencari.</div>';
+    wrap.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Belum ada data SPKLU di sekitar sini (coba aktifkan GPS atau Import/Sync data).</div>';
     return;
   }
-  wrap.innerHTML = list.slice(0,8).map((el,i)=>{
+  wrap.innerHTML = list.slice(0,12).map((el,i)=>{
     const distKm=(el.dist/1000).toFixed(1);
+    const tagTxt = el.userAdded && !el.isMolis ? 'catatanmu' : (el.isMolis ? (el.sourceLabel || 'Molis') : '');
     return `<div class="np-list-item" style="cursor:pointer" onclick="routeToSpkluFromSheet(${i})">
       <div class="np-list-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
       <div style="flex:1;min-width:0">
         <div class="np-list-name">${escapeHtml(el.name)}</div>
-        <div class="np-list-sub">${distKm} km${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor tersedia':''}${el.userAdded?' · catatanmu':''}</div>
+        <div class="np-list-sub">${distKm} km${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor':''}${el.types?' · '+escapeHtml(el.types):''}${tagTxt?' · '+escapeHtml(tagTxt):''}</div>
       </div>
-      <div class="np-list-badge" style="${el.available?'':'background:rgba(255,82,82,.14);color:var(--danger)'}">${el.available?'●':'●'}</div>
+      <div class="np-list-badge" style="${el.available?'':'background:rgba(255,82,82,.14);color:var(--danger)'}">●</div>
       <div style="color:var(--muted);font-size:14px;margin-left:2px">›</div>
     </div>`;
   }).join('');
@@ -17073,13 +17932,19 @@ function routeToSpkluFromSheet(idx){
 async function openSpkluModal(){
   openNpSheet('spkluSheet');
   (document.getElementById('sideSpkluBtn')&&document.getElementById('sideSpkluBtn').classList.add('active'));
+  refreshMolisUiStatus();
   if(userLat==null){
-    document.getElementById('spkluSheetList').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Menunggu lokasi GPS…</div>';
+    const molisAll = await getAllMolisElements();
+    if(molisAll.length){
+      document.getElementById('spkluSheetList').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:16px 0">Menunggu lokasi GPS untuk mengurutkan jarak… ('+molisAll.length+' titik Molis siap)</div>';
+    } else {
+      document.getElementById('spkluSheetList').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Menunggu lokasi GPS…</div>';
+    }
     return;
   }
   if(!lastChargingResults || !lastChargingResults.length){
     document.getElementById('spkluSheetList').innerHTML = '<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px 0">Mencari SPKLU terdekat…</div>';
-    await fetchChargingStations();
+    await fetchChargingStations({ quiet: true, noFit: !chargingActive });
   }
   renderSpkluSheetList();
 }
@@ -22698,10 +23563,12 @@ function fetchOsmSpklu(lat,lng){
   return pending;
 }
 
-async function fetchChargingStations(){
+async function fetchChargingStations(opts){
   if(userLat===null||userLng===null) return;
-  clearChargingMarkers();
-  showToast('🔍 Mencari SPKLU terdekat...');
+  const quiet = !!(opts && opts.quiet);
+  const noFit = !!(opts && opts.noFit);
+  if(chargingActive || !noFit) clearChargingMarkers();
+  if(!quiet) showToast('🔍 Mencari SPKLU & Molis terdekat...');
   // OpenChargeMap — database SPKLU paling lengkap untuk Indonesia
   // distance dalam KM, maxresults dibatasi biar peta nggak penuh
   const params = new URLSearchParams({
@@ -22719,6 +23586,7 @@ async function fetchChargingStations(){
   const url = `https://api.openchargemap.io/v3/poi/?${params.toString()}`;
 
   try{
+    const molisPromise = getNearbyMolisElements(userLat, userLng, 75000).catch(()=>[]);
     const osmPromise = fetchOsmSpklu(userLat,userLng).catch(()=>null);   // sumber tambahan, jalan paralel
     let data = [], ocmFailed = false, ocmErrObj = null;
     try{
@@ -22728,23 +23596,39 @@ async function fetchChargingStations(){
     }catch(ocmErr){
       ocmFailed = true; ocmErrObj = ocmErr;
     }
+    const molisEls = await molisPromise;
     // Tunggu OSM maksimal 5 dtk supaya pencarian tidak lama; kalau belum selesai, lanjut tanpa OSM
     // (permintaan tetap berjalan di latar & di-cache, jadi pencarian berikutnya sudah ada OSM-nya)
     const osmRes = await Promise.race([osmPromise, new Promise(r=>setTimeout(()=>r('timeout'),5000))]);
     const osmState = osmRes==='timeout' ? 'lambat' : (osmRes===null ? 'gagal' : (osmRes.length ? 'ok' : 'kosong'));
     const osmEls = Array.isArray(osmRes) ? osmRes : [];
+    const userEls = userSpkluElements();
     if(ocmFailed){
-      if(!userSpkluElements().length && !osmEls.length) throw ocmErrObj;   // tak ada data sama sekali -> pesan error seperti dulu
-      showToast('Data OpenChargeMap gagal dimuat — menampilkan sumber lain');
+      if(!userEls.length && !osmEls.length && !molisEls.length) throw ocmErrObj;   // tak ada data sama sekali -> pesan error seperti dulu
+      if(!quiet) showToast('Data OpenChargeMap offline — menampilkan database Molis & lokal');
     }
 
-    let elements = (data||[]).map(poi=>{
+    let elements = [];
+    const pushUnique = (item)=>{
+      if(!item || !item.lat || !item.lon) return false;
+      if(elements.some(e=>haversine(e.lat,e.lon,item.lat,item.lon)<60)) return false;
+      elements.push(item);
+      return true;
+    };
+
+    // Prioritaskan catatan user, lalu database Molis (Import/Sync/Bawaan), lalu OCM & OSM
+    userEls.forEach(pushUnique);
+    let molisAdded = 0;
+    molisEls.forEach(m=>{ if(pushUnique(m)) molisAdded++; });
+
+    let ocmAdded = 0;
+    (data||[]).forEach(poi=>{
       const conns = poi.Connections||[];
       const types = [...new Set(conns.map(c=>(c.ConnectionType&&c.ConnectionType.Title)).filter(Boolean))];
       const maxKw = conns.reduce((m,c)=>Math.max(m, c.PowerKW||0), 0);
       const opCount = conns.length;
       const available = conns.some(c=>(c.StatusType&&c.StatusType.IsOperational)===true) || (poi.StatusType&&poi.StatusType.IsOperational)!==false;
-      return {
+      const ok = pushUnique({
         lat: (poi.AddressInfo&&poi.AddressInfo.Latitude),
         lon: (poi.AddressInfo&&poi.AddressInfo.Longitude),
         name: (poi.AddressInfo&&poi.AddressInfo.Title) || (poi.OperatorInfo&&poi.OperatorInfo.Title) || 'SPKLU',
@@ -22756,72 +23640,91 @@ async function fetchChargingStations(){
         available,
         usageCost: poi.UsageCost || '',
         dist: 0
-      };
-    }).filter(el=>el.lat&&el.lon);
-    elements = elements.concat(userSpkluElements());   // SPKLU yang dicatat user sendiri
-    // Tambahkan SPKLU dari OSM, buang yang dobel (jarak < 60 m dari titik yang sudah ada)
-    let osmAdded = 0;
-    osmEls.forEach(o=>{
-      if(elements.some(e=>haversine(e.lat,e.lon,o.lat,o.lon)<60)) return;
-      elements.push(o); osmAdded++;
+      });
+      if(ok) ocmAdded++;
     });
 
-    // Hitung jarak & urutkan terdekat
+    // Tambahkan SPKLU dari OSM, buang yang dobel (jarak < 60 m dari titik yang sudah ada)
+    let osmAdded = 0;
+    osmEls.forEach(o=>{ if(pushUnique(o)) osmAdded++; });
+
+    // Hitung jarak & urutkan terdekat; kalau dalam 75 km kosong, ambil terdekat dari seluruh DB Molis
     elements = elements.map(el=>({...el, dist: haversine(userLat,userLng,el.lat,el.lon)}))
-      .sort((a,b)=>a.dist-b.dist).slice(0,30);
+      .sort((a,b)=>a.dist-b.dist).slice(0,40);
 
     if(!elements.length){
-      showToast('SPKLU tidak ditemukan di sekitar sini');
+      const allMolis = await getAllMolisElements();
+      if(allMolis.length){
+        elements = allMolis.map(el=>({...el, dist: haversine(userLat,userLng,el.lat,el.lon)}))
+          .sort((a,b)=>a.dist-b.dist).slice(0,15);
+      }
+    }
+
+    if(!elements.length){
+      if(!quiet) showToast('SPKLU tidak ditemukan di sekitar sini');
       return;
     }
 
     // Simpan untuk dipakai trip planner (auto-suggest SPKLU di rute)
     lastChargingResults = elements;
 
-    elements.forEach((el,idx)=>{
-      const distKm=(el.dist/1000).toFixed(1);
-      const statusTxt = el.fromOsm ? '<span style="color:var(--muted)">'+statusDot('#4fc3f7')+'Data OpenStreetMap</span>' : el.userAdded ? '<span style="color:var(--muted)">'+statusDot('#ffb300')+'Catatanmu · belum terverifikasi</span>' : el.available ? '<span style="color:#00e676">'+statusDot('#00e676')+'Beroperasi</span>' : '<span style="color:#ff3d3d">'+statusDot('#ff3d3d')+'Status tidak pasti</span>';
-      const popup=new mapboxgl.Popup({offset:25,closeButton:true,closeOnClick:true,maxWidth:'260px'})
-        .setHTML(`<div style="font-size:13px;font-weight:700"><span style="color:var(--green)">${svgIco('zap',14)}</span> ${escapeHtml(el.name)}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">Provider: ${el.operator?escapeHtml(el.operator):'tidak diketahui'}</div>
-          ${el.addr?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(el.addr)}</div>`:''}
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">${distKm} km dari lokasi</div>
-          <div style="font-size:11px;color:var(--green);margin-top:2px">Sambungan: ${el.types?escapeHtml(el.types):'tidak diketahui'}${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor':''}</div>
-          ${el.usageCost?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Biaya: ${escapeHtml(el.usageCost)}</div>`:''}
-          <div style="font-size:11px;margin-top:2px">${statusTxt}</div>
-          <button class="spklu-route-btn" onclick="routeToSpkluFromSheet(${idx})">${svgIco('nav',13)} Rute ke sini</button>`);
-      const m=new mapboxgl.Marker({element:makeChargingMarkerEl()})
-        .setLngLat([el.lon,el.lat])
-        .setPopup(popup)
-        .addTo(mapInstance);
-      // stopPropagation: tanpa ini klik marker juga dianggap klik peta (setDestination koordinat mentah) dan popup ter-toggle dua kali
-      m.getElement().addEventListener('click',ev=>{ ev.stopPropagation();
-        chargingMarkers.forEach(o=>{ if(o!==m){ const pp=o.getPopup&&o.getPopup(); if(pp&&pp.isOpen&&pp.isOpen()) pp.remove(); } });   // tutup popup lain, jangan menumpuk
-        m.togglePopup(); });
-      chargingMarkers.push(m);
-    });
+    if(mapInstance && (chargingActive || !noFit)){
+      elements.forEach((el,idx)=>{
+        const distKm=(el.dist/1000).toFixed(1);
+        const statusTxt = el.isMolis
+          ? '<span style="color:#00e5ff">'+statusDot('#00e5ff')+escapeHtml(el.sourceLabel||'Molis')+(el.isMolisFriendly!==false?' · Ramah Motor Listrik':'')+'</span>'
+          : el.fromOsm ? '<span style="color:var(--muted)">'+statusDot('#4fc3f7')+'Data OpenStreetMap</span>'
+          : el.userAdded ? '<span style="color:var(--muted)">'+statusDot('#ffb300')+'Catatanmu · belum terverifikasi</span>'
+          : el.available ? '<span style="color:#00e676">'+statusDot('#00e676')+'Beroperasi</span>'
+          : '<span style="color:#ff3d3d">'+statusDot('#ff3d3d')+'Status tidak pasti</span>';
+        const popup=new mapboxgl.Popup({offset:25,closeButton:true,closeOnClick:true,maxWidth:'260px'})
+          .setHTML(`<div style="font-size:13px;font-weight:700"><span style="color:var(--green)">${svgIco('zap',14)}</span> ${escapeHtml(el.name)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">Provider: ${el.operator?escapeHtml(el.operator):'tidak diketahui'}</div>
+            ${el.addr?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(el.addr)}</div>`:''}
+            <div style="font-size:11px;color:var(--muted);margin-top:3px">${distKm} km dari lokasi</div>
+            <div style="font-size:11px;color:var(--green);margin-top:2px">Sambungan: ${el.types?escapeHtml(el.types):'tidak diketahui'}${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor':''}</div>
+            ${el.usageCost?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Biaya: ${escapeHtml(el.usageCost)}</div>`:''}
+            <div style="font-size:11px;margin-top:2px">${statusTxt}</div>
+            <button class="spklu-route-btn" onclick="routeToSpkluFromSheet(${idx})">${svgIco('nav',13)} Rute ke sini</button>`);
+        const m=new mapboxgl.Marker({element:makeChargingMarkerEl(el)})
+          .setLngLat([el.lon,el.lat])
+          .setPopup(popup)
+          .addTo(mapInstance);
+        // stopPropagation: tanpa ini klik marker juga dianggap klik peta (setDestination koordinat mentah) dan popup ter-toggle dua kali
+        m.getElement().addEventListener('click',ev=>{ ev.stopPropagation();
+          chargingMarkers.forEach(o=>{ if(o!==m){ const pp=o.getPopup&&o.getPopup(); if(pp&&pp.isOpen&&pp.isOpen()) pp.remove(); } });   // tutup popup lain, jangan menumpuk
+          m.togglePopup(); });
+        chargingMarkers.push(m);
+      });
 
-    const nearest=(elements[0].dist/1000).toFixed(1);
-    showToast(`⚡ ${elements.length} SPKLU (OpenChargeMap${osmAdded?' + OSM':''}) · terdekat ${nearest} km`+(osmState==='ok'?'':' · OSM '+osmState));
+      const nearest=(elements[0].dist/1000).toFixed(1);
+      const srcParts = [];
+      if(molisAdded) srcParts.push('Molis');
+      if(ocmAdded) srcParts.push('OCM');
+      if(osmAdded) srcParts.push('OSM');
+      if(!quiet) showToast(`⚡ ${elements.length} SPKLU (${srcParts.join(' + ')||'Lokal'}) · terdekat ${nearest} km`+(osmState==='ok'?'':' · OSM '+osmState));
 
-    const bounds=elements.reduce((b,el)=>b.extend([el.lon,el.lat]),
-      new mapboxgl.LngLatBounds([elements[0].lon,elements[0].lat],[elements[0].lon,elements[0].lat]));
-    if(userLat) bounds.extend([userLng,userLat]);
-    mapInstance.fitBounds(bounds,{padding:60,maxZoom:13});
+      if(!noFit){
+        const bounds=elements.reduce((b,el)=>b.extend([el.lon,el.lat]),
+          new mapboxgl.LngLatBounds([elements[0].lon,elements[0].lat],[elements[0].lon,elements[0].lat]));
+        if(userLat) bounds.extend([userLng,userLat]);
+        mapInstance.fitBounds(bounds,{padding:60,maxZoom:13});
+      }
+    }
 
   }catch(e){
     log('SPKLU error: '+e.message,'err');
-    showToast('Gagal memuat data SPKLU — cek koneksi/API key');
+    if(!quiet) showToast('Gagal memuat data SPKLU — cek koneksi/API key');
   }
 }
 function escapeHtml(s){
   const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML;
 }
-function makeChargingMarkerEl(){
-  const el=document.createElement('div');
-  el.className='charging-marker';
-  el.innerHTML=svgIco('zap',15);
-  return el;
+function makeChargingMarkerEl(el){
+  const div=document.createElement('div');
+  div.className='charging-marker'+(el && el.isMolis ? ' molis' : '');
+  div.innerHTML=svgIco('zap',15);
+  return div;
 }
 
 // ═══════════════════════════════════════════

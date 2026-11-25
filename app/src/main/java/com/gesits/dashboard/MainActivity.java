@@ -49,14 +49,23 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.json.JSONObject;
 
 public class MainActivity extends Activity {
@@ -134,6 +143,16 @@ public class MainActivity extends Activity {
     private BroadcastReceiver apkDownloadReceiver = null;
     private final Handler    apkProgressHandler  = new Handler(Looper.getMainLooper());
     private Runnable         apkProgressRunnable = null;
+
+    // ── Background sync / remote text fetch (bebas CORS untuk data SPKLU/Molis) ──
+    private static final int MAX_REMOTE_FETCH_BYTES = 15 * 1024 * 1024;
+    private final ConcurrentHashMap<String, byte[]> fetchedPayloads = new ConcurrentHashMap<>();
+    private final OkHttpClient syncHttpClient = new OkHttpClient.Builder()
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build();
 
     // ══════════════════════════════════════════════
     // SERVICE CONNECTION
@@ -1590,7 +1609,86 @@ public class MainActivity extends Activity {
             });
         }
 
+        // Fetch teks (JSON/GeoJSON/KML/CSV/GPX) dari URL remote secara asinkron via OkHttp,
+        // lalu hasil mentahnya diambil JS lewat https://appassets.androidplatform.net/molis-fetch/<id>
+        // (menghindari batas ukuran IPC bridge dan bebas hambatan CORS WebView).
+        @JavascriptInterface
+        public void fetchRemoteText(final String requestId, final String urlString, final String etag) {
+            if (requestId == null || requestId.trim().isEmpty()) return;
+            final String cleanUrl = urlString == null ? "" : urlString.trim();
+            if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+                deliverNativeFetchResult(requestId, false, 0, "", "URL harus diawali http:// atau https://");
+                return;
+            }
+            new Thread(() -> {
+                Response response = null;
+                try {
+                    Request.Builder rb = new Request.Builder()
+                        .url(cleanUrl)
+                        .header("User-Agent", "GesitsDashboard/1.0 (Android)")
+                        .header("Accept", "application/json, application/geo+json, application/vnd.google-earth.kml+xml, application/gpx+xml, text/csv, text/plain, */*");
+                    if (etag != null && !etag.trim().isEmpty()) {
+                        rb.header("If-None-Match", etag.trim());
+                    }
+                    response = syncHttpClient.newCall(rb.build()).execute();
+                    int code = response.code();
+                    if (code == 304) {
+                        deliverNativeFetchResult(requestId, true, 304, etag != null ? etag : "", "");
+                        return;
+                    }
+                    if (!response.isSuccessful()) {
+                        deliverNativeFetchResult(requestId, false, code, "", "HTTP " + code);
+                        return;
+                    }
+                    ResponseBody body = response.body();
+                    if (body == null) {
+                        deliverNativeFetchResult(requestId, false, code, "", "Respon kosong");
+                        return;
+                    }
+                    InputStream is = body.byteStream();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[16384];
+                    int read;
+                    int total = 0;
+                    while ((read = is.read(buf)) != -1) {
+                        total += read;
+                        if (total > MAX_REMOTE_FETCH_BYTES) {
+                            deliverNativeFetchResult(requestId, false, code, "", "File terlalu besar (>15 MB)");
+                            return;
+                        }
+                        baos.write(buf, 0, read);
+                    }
+                    if (fetchedPayloads.size() >= 8) {
+                        fetchedPayloads.clear();
+                    }
+                    fetchedPayloads.put(requestId, baos.toByteArray());
+                    String newEtag = response.header("ETag", "");
+                    deliverNativeFetchResult(requestId, true, code, newEtag != null ? newEtag : "", "");
+                } catch (Exception e) {
+                    deliverNativeFetchResult(requestId, false, 0, "",
+                        e.getMessage() != null ? e.getMessage() : "Gagal terhubung");
+                } finally {
+                    if (response != null) {
+                        try { response.close(); } catch (Exception ignored) {}
+                    }
+                }
+            }, "MolisSyncFetch").start();
+        }
+
     } // ← TUTUP JsBridge
+
+    private void deliverNativeFetchResult(String requestId, boolean ok, int status, String etag, String errorMsg) {
+        runOnUiThread(() -> {
+            if (webView == null) return;
+            String js = "window.__onNativeFetchDone && window.__onNativeFetchDone("
+                + JSONObject.quote(requestId) + ","
+                + ok + ","
+                + status + ","
+                + JSONObject.quote(etag != null ? etag : "") + ","
+                + JSONObject.quote(errorMsg != null ? errorMsg : "") + ")";
+            webView.evaluateJavascript(js, null);
+        });
+    }
 
     // ── Update APK: mulai download via DownloadManager sistem ──
     // Pakai DownloadManager (bukan HttpURLConnection manual) biar dapet
@@ -2150,12 +2248,29 @@ public class MainActivity extends Activity {
                     filePathCallback = null;
                 }
                 filePathCallback = callback;
+                String[] acceptTypes = (params != null) ? params.getAcceptTypes() : null;
+                boolean imageOnly = true;
+                boolean hasAnyAccept = false;
+                if (acceptTypes != null) {
+                    for (String t : acceptTypes) {
+                        if (t == null) continue;
+                        for (String part : t.split(",")) {
+                            String s = part.trim().toLowerCase(Locale.US);
+                            if (s.isEmpty()) continue;
+                            hasAnyAccept = true;
+                            if (!s.startsWith("image/")) {
+                                imageOnly = false;
+                            }
+                        }
+                    }
+                }
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("image/*");
+                intent.setType((hasAnyAccept && imageOnly) ? "image/*" : "*/*");
+                String chooserTitle = (hasAnyAccept && imageOnly) ? "Pilih Gambar" : "Pilih File Data";
                 try {
                     startActivityForResult(
-                        Intent.createChooser(intent, "Pilih Gambar"),
+                        Intent.createChooser(intent, chooserTitle),
                         REQUEST_CODE_FILE_CHOOSER);
                 } catch (Exception e) {
                     android.util.Log.e("GesitsFileChooser", "Gagal buka chooser", e);
@@ -2189,7 +2304,21 @@ public class MainActivity extends Activity {
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return assetLoader.shouldInterceptRequest(request.getUrl());
+                Uri u = request != null ? request.getUrl() : null;
+                if (u != null && "appassets.androidplatform.net".equals(u.getHost())) {
+                    String path = u.getPath();
+                    if (path != null && path.startsWith("/molis-fetch/")) {
+                        String reqId = Uri.decode(path.substring("/molis-fetch/".length()));
+                        byte[] data = fetchedPayloads.remove(reqId);
+                        if (data == null) {
+                            return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found",
+                                null, new ByteArrayInputStream(new byte[0]));
+                        }
+                        return new WebResourceResponse("text/plain", "UTF-8", 200, "OK",
+                            null, new ByteArrayInputStream(data));
+                    }
+                }
+                return assetLoader.shouldInterceptRequest(u);
             }
             @Override
             public void onReceivedError(WebView view, int errorCode,
@@ -2478,6 +2607,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         NativeMapStreamer.setGpsSink(null);
         webViewRef = null;
+        fetchedPayloads.clear();
         stopApkProgressPolling();
         stopNativeMicCaptureInternal(); // pastikan AudioRecord ke-release, jangan sampe mic "kekunci"
         if (videoWriteStream != null) {
