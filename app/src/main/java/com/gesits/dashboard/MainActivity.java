@@ -14,6 +14,7 @@ import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
+import android.content.pm.Signature;
 import android.content.res.Configuration;
 import android.database.Cursor;
 import android.media.AudioFormat;
@@ -143,6 +144,7 @@ public class MainActivity extends Activity {
     private static final String APK_UPDATE_FILENAME = "gesits-update.apk";
     private long             apkDownloadId       = -1L;
     private BroadcastReceiver apkDownloadReceiver = null;
+    private File             lastDownloadedApkFile = null;
     private final Handler    apkProgressHandler  = new Handler(Looper.getMainLooper());
     private Runnable         apkProgressRunnable = null;
 
@@ -364,6 +366,36 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 return 0L;
             }
+        }
+
+        @JavascriptInterface
+        public void openAppDetailsSettings() {
+            runOnUiThread(() -> {
+                try {
+                    Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    i.setData(Uri.parse("package:" + getPackageName()));
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Gagal buka info aplikasi", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void retryInstallDownloadedApk() {
+            runOnUiThread(() -> {
+                File f = lastDownloadedApkFile;
+                if (f == null || !f.exists()) {
+                    File destDir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                    if (destDir != null) f = new File(destDir, APK_UPDATE_FILENAME);
+                }
+                if (f != null && f.exists()) {
+                    launchApkInstallerIntent(f);
+                } else {
+                    Toast.makeText(MainActivity.this, "File APK update belum tersedia", Toast.LENGTH_SHORT).show();
+                }
+            });
         }
 
         // ── Resolve link pendek Google Maps (maps.app.goo.gl / goo.gl/maps) ──
@@ -1890,8 +1922,32 @@ public class MainActivity extends Activity {
         installApk(dest);
     }
 
-    // Buka installer APK sistem lewat FileProvider (wajib content:// di Android 7+)
-    private void installApk(File file) {
+    private String extractCertSha256Short(PackageInfo pInfo) {
+        if (pInfo == null) return "";
+        try {
+            Signature[] sigs = null;
+            if (Build.VERSION.SDK_INT >= 28 && pInfo.signingInfo != null) {
+                sigs = pInfo.signingInfo.hasMultipleSigners()
+                    ? pInfo.signingInfo.getApkContentsSigners()
+                    : pInfo.signingInfo.getSigningCertificateHistory();
+            } else {
+                sigs = pInfo.signatures;
+            }
+            if (sigs == null || sigs.length == 0 || sigs[0] == null) return "";
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] dig = md.digest(sigs[0].toByteArray());
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < Math.min(6, dig.length); i++) {
+                if (i > 0) sb.append(':');
+                sb.append(String.format(Locale.US, "%02X", dig[i]));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void launchApkInstallerIntent(File file) {
         try {
             Uri apkUri = FileProvider.getUriForFile(
                 MainActivity.this, "com.gesits.dashboard.fileprovider", file);
@@ -1904,6 +1960,47 @@ public class MainActivity extends Activity {
             webView.evaluateJavascript(
                 "window.onApkDownloadFailed && window.onApkDownloadFailed('install')", null);
         }
+    }
+
+    // Buka installer APK sistem lewat FileProvider (wajib content:// di Android 7+)
+    // Cek kecocokan signature keystore & versionCode dulu agar user tahu penyebab pasti jika "bentrok".
+    private void installApk(File file) {
+        lastDownloadedApkFile = file;
+        try {
+            PackageManager pm = getPackageManager();
+            int flags = (Build.VERSION.SDK_INT >= 28)
+                ? PackageManager.GET_SIGNING_CERTIFICATES
+                : PackageManager.GET_SIGNATURES;
+            PackageInfo installedInfo = pm.getPackageInfo(getPackageName(), flags);
+            PackageInfo apkInfo = pm.getPackageArchiveInfo(file.getAbsolutePath(), flags);
+            if (apkInfo != null) {
+                long curVc = (Build.VERSION.SDK_INT >= 28)
+                    ? installedInfo.getLongVersionCode()
+                    : installedInfo.versionCode;
+                long apkVc = (Build.VERSION.SDK_INT >= 28)
+                    ? apkInfo.getLongVersionCode()
+                    : apkInfo.versionCode;
+                String curSig = extractCertSha256Short(installedInfo);
+                String apkSig = extractCertSha256Short(apkInfo);
+                String conflictReason = "";
+                if (!curSig.isEmpty() && !apkSig.isEmpty() && !curSig.equals(apkSig)) {
+                    conflictReason = "SIGNATURE_MISMATCH";
+                } else if (apkVc > 0 && curVc > 0 && apkVc < curVc) {
+                    conflictReason = "DOWNGRADE";
+                }
+                if (!conflictReason.isEmpty() && webView != null) {
+                    final String js = "window.onApkInstallConflict && window.onApkInstallConflict("
+                        + JSONObject.quote(conflictReason) + ","
+                        + JSONObject.quote(curSig) + ","
+                        + JSONObject.quote(apkSig) + ","
+                        + curVc + ","
+                        + apkVc + ")";
+                    runOnUiThread(() -> webView.evaluateJavascript(js, null));
+                    return;
+                }
+            }
+        } catch (Exception ignored) {}
+        launchApkInstallerIntent(file);
     }
 
     // Push status koneksi ke widget LANGSUNG dari native code (dipanggil

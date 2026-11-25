@@ -7112,6 +7112,24 @@ window.onApkDownloadFailed = function(reason){
   }
   showToast('⚠️ Update gagal, coba lagi lewat menu Aplikasi.');
 };
+window.onApkInstallConflict = function(reason, curSig, apkSig, curVc, apkVc){
+  _apkDownloading = false;
+  setApkProgressVisible(false);
+  const msgEl = document.getElementById('apkConflictDesc');
+  const metaEl = document.getElementById('apkConflictMeta');
+  if(msgEl){
+    msgEl.innerHTML = reason === 'DOWNGRADE'
+      ? 'Versi APK yang terpasang di HP memiliki <b>Build (versionCode) lebih baru atau sama</b> dengan APK update sehingga Android menolak menimpa.'
+      : 'APK yang terpasang saat ini dibuat memakai <b>tanda tangan (keystore) berbeda</b> (misalnya dari build lokal/AndroidIDE/AI Studio), sehingga Android menolak menimpa dengan rilis GitHub.<br><br><b>Solusi sekali saja:</b> backup catatan/data penting bila perlu, <b>Uninstall aplikasi lama</b> terlebih dahulu, lalu pasang APK dari rilis GitHub. Setelah memakai APK GitHub, update berikutnya tidak akan bentrok lagi.';
+  }
+  if(metaEl){
+    metaEl.textContent = reason === 'DOWNGRADE'
+      ? `Build terpasang: ${curVc} · Build unduhan: ${apkVc}`
+      : `Sertifikat terpasang: ${curSig || '—'} · Sertifikat unduhan: ${apkSig || '—'}`;
+  }
+  const m = document.getElementById('apkConflictModal');
+  if(m) m.classList.add('show');
+};
 
 async function downloadApk(){
   // Coba ambil link APK rilis TERBARU dari GitHub dulu — biar gak perlu
@@ -28324,6 +28342,23 @@ function renderFuelSavings(){
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick="closeModal('aboutAppModal')">Tutup</button>
       <button class="modal-btn primary" id="aboutActionBtn">🔄 Cek Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DIALOG BENTROK SIGNATURE / VERSI APK ══ -->
+<div class="modal-overlay" id="apkConflictModal" onclick="if(event.target===this)closeModal('apkConflictModal')">
+  <div class="modal" style="max-height:84vh;overflow-y:auto">
+    <h3>⚠️ Paket Bentrok Saat Update</h3>
+    <div id="apkConflictDesc" style="font-size:12.5px;line-height:1.55;color:var(--text);margin-bottom:10px">—</div>
+    <div id="apkConflictMeta" style="font-size:10.5px;font-family:monospace;color:var(--muted);background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:12px">—</div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn-std" style="flex:1" onclick="closeModal('apkConflictModal');if(typeof Android!=='undefined'&&Android.openUrl)Android.openUrl('https://github.com/armadit-eng/gesits-dashboard/releases/latest');">🌐 Halaman Rilis</button>
+      <button class="btn-std" style="flex:1" onclick="closeModal('apkConflictModal');if(typeof Android!=='undefined'&&Android.retryInstallDownloadedApk)Android.retryInstallDownloadedApk();">Tetap Coba Pasang</button>
+    </div>
+    <div class="modal-actions" style="margin-top:8px">
+      <button class="modal-btn cancel" onclick="closeModal('apkConflictModal')">Tutup</button>
+      <button class="modal-btn primary" onclick="closeModal('apkConflictModal');if(typeof Android!=='undefined'&&Android.openAppDetailsSettings)Android.openAppDetailsSettings();">⚙️ Info App (Uninstall)</button>
     </div>
   </div>
 </div>
