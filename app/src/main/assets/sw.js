@@ -8,9 +8,9 @@
 
 // Naikkan VERSION ini setiap kali deploy perubahan baru ke GitHub.
 // Browser bakal deteksi sw.js berubah → toast "Update tersedia" muncul di app.
-const VERSION     = 'v2.5.0';
+const VERSION     = 'v1.0.1.23';
 const SHELL_CACHE = `gesits-shell-${VERSION}`;
-const TILE_CACHE  = `gesits-tiles-${VERSION}`;
+const TILE_CACHE  = 'gesits-tiles-v2.5.0';
 const TILE_CACHE_MAX = 600; // batas jumlah tile tersimpan, biar storage HP nggak penuh
 
 const SHELL_FILES = [
@@ -62,7 +62,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((names) =>
       Promise.all(
-        names.filter((n) => n !== SHELL_CACHE && n !== TILE_CACHE)
+        names.filter((n) => n !== SHELL_CACHE && n !== TILE_CACHE && n !== 'gesits-map-tiles-v1')
              .map((n) => caches.delete(n))
       )
     )
