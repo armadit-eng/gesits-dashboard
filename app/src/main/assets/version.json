@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.24",
-  "versionCode": 5,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/latest",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/latest",
-  "notes": "- Pembaruan Trip Planner auto-insert titik cas Molis\n- Status komunitas stasiun & Mode Touring / Darurat SOS\n- Notifikasi update aplikasi dengan info versi & changelog"
+  "version": "1.0.1.25",
+  "versionCode": 6,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.25/GesitsDashboard-v1.0.1.25-vc6-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.25",
+  "notes": "- feat: add AI studio screenshot asset\n- chore: update PWA service worker and versioning"
 }
