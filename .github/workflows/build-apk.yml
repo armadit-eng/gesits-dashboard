@@ -81,6 +81,13 @@ jobs:
           )
           gradle_file.write_text(content, encoding="utf-8")
 
+          index_file = Path("app/src/main/assets/index.html")
+          if index_file.exists():
+              idx_txt = index_file.read_text(encoding="utf-8")
+              idx_txt = re.sub(r"(const APP_VERSION\s*=\s*['\"])([^'\"]+)(['\"];)", rf"\g<1>{new_vn}\g<3>", idx_txt, count=1)
+              idx_txt = re.sub(r"(const APP_VERSION_CODE\s*=\s*)(\d+)(;)", rf"\g<1>{new_vc}\g<3>", idx_txt, count=1)
+              index_file.write_text(idx_txt, encoding="utf-8")
+
           print(f"Bumped versionCode: {old_vc} -> {new_vc}")
           print(f"Bumped versionName: {old_vn} -> {new_vn}")
 
@@ -130,12 +137,52 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/build.gradle
+          git add app/build.gradle app/src/main/assets/index.html
           if ! git diff --cached --quiet; then
             git commit -m "chore: bump version to ${{ steps.bump.outputs.version_name }} (${{ steps.bump.outputs.version_code }}) [skip ci]"
             git pull --rebase --autostash origin "${{ github.ref_name }}"
             git push origin "HEAD:${{ github.ref_name }}"
           fi
+
+      - name: Generate release changelog
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        env:
+          VERSION_NAME: ${{ steps.bump.outputs.version_name }}
+          VERSION_CODE: ${{ steps.bump.outputs.version_code }}
+        run: |
+          python3 - <<'EOF'
+          import os, subprocess
+          from pathlib import Path
+
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
+
+          try:
+              last_tag = git("describe", "--tags", "--abbrev=0")
+              log_range = f"{last_tag}..HEAD"
+          except Exception:
+              last_tag = ""
+              log_range = "-n10"
+
+          raw_logs = git("log", log_range, "--pretty=format:%s")
+          lines = [
+              ln.strip() for ln in raw_logs.splitlines()
+              if ln.strip()
+              and not ln.strip().startswith("chore: bump version")
+              and "[skip ci]" not in ln
+          ]
+
+          v_name = os.environ.get("VERSION_NAME", "")
+          v_code = os.environ.get("VERSION_CODE", "")
+          notes = [f"### Perubahan di v{v_name} (Build {v_code})"]
+          if lines:
+              for ln in lines[:20]:
+                  notes.append(f"- {ln}")
+          else:
+              notes.append("- Pembaruan stabilitas, perbaikan bug, dan peningkatan performa aplikasi.")
+
+          Path("release_notes.md").write_text("\n".join(notes) + "\n", encoding="utf-8")
+          EOF
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
@@ -143,5 +190,6 @@ jobs:
         with:
           tag_name: ${{ steps.bump.outputs.version_name }}
           name: "GESITS Dashboard ${{ steps.bump.outputs.version_name }}"
+          body_path: release_notes.md
           generate_release_notes: true
           files: GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk

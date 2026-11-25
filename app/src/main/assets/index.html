@@ -2726,7 +2726,10 @@ function motoImgFallback(img){
 <!-- UPDATE BANNER -->
 <div class="update-banner" id="updateBanner">
   <span>🔄 Versi baru tersedia</span>
-  <button onclick="applyUpdate()">Update</button>
+  <div style="display:flex;gap:6px;flex-shrink:0">
+    <button onclick="dismissUpdateBanner()" style="background:transparent;color:var(--muted);border:1px solid var(--border)">Nanti</button>
+    <button onclick="showPwaUpdatePrompt()">Lihat &amp; Update</button>
+  </div>
 </div>
 
 
@@ -4449,8 +4452,8 @@ function motoImgFallback(img){
   <div id="apkDownloadBanner" style="display:none;margin:16px 14px 0;background:linear-gradient(135deg,rgba(var(--green-rgb),.12),rgba(41,182,246,.08));border:1px solid rgba(var(--green-rgb),.3);border-radius:14px;padding:14px;align-items:center;gap:12px">
     <div style="font-size:28px;flex-shrink:0">📲</div>
     <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:700;color:var(--text)">Punya aplikasi Android-nya!</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Lebih stabil buat koneksi BT motor & background. Install versi app-nya.</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text)">Punya aplikasi Android-nya! <span id="apkBannerVerBadge" style="font-size:10.5px;color:var(--green);font-weight:800"></span></div>
+      <div id="apkBannerSub" style="font-size:11px;color:var(--muted);margin-top:2px">Lebih stabil buat koneksi BT motor &amp; background. Install versi app-nya.</div>
     </div>
     <button onclick="downloadApk()" style="background:var(--green);color:#000;border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:800;flex-shrink:0;cursor:pointer">Download</button>
   </div>
@@ -4524,9 +4527,10 @@ function motoImgFallback(img){
         <span>Bantuan</span>
         <span class="chev">›</span>
       </div>
-      <div class="akun-footer-link" onclick="showToast('GESITS Nav — dibuat mandiri, single-file PWA')">
+      <div class="akun-footer-link" onclick="openAboutAppModal()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
         <span>Tentang Aplikasi</span>
+        <span id="akunAboutVer" style="margin-left:auto;margin-right:6px;font-size:11px;color:var(--muted);font-weight:600"></span>
         <span class="chev">›</span>
       </div>
       <div class="akun-footer-link" onclick="showToast('Makasih! Kalau app-nya terasa berguna, kasih rating ya.')">
@@ -6000,27 +6004,40 @@ const IS_NATIVE_ANDROID = (typeof Android !== 'undefined');
 //    "https://drive.google.com/uc?export=download&id=FILE_ID" (bukan link
 //    /view biasa) — ini skip 1 langkah tapi TETAP bisa kena halaman
 //    konfirmasi kalau ukuran filenya di atas ambang scan Google (~25MB).
-const APK_DOWNLOAD_URL = 'https://github.com/armadit-eng/Gesits-Classic/releases/download/1.0.1.7/GesitsDashboard-debug.apk';
+const APP_VERSION = '1.0.1.22';
+const APP_VERSION_CODE = 3;
+const PWA_WEB_URL = 'https://gesits.pages.dev';
+const APK_DOWNLOAD_URL = 'https://github.com/armadit-eng/dashboard-app/releases/latest';
 const APK_FILENAME = 'gesits-app.apk'; // nama file pas di-download, disesuaikan aja
-const GITHUB_REPO = 'armadit-eng/Gesits-Classic';
+const GITHUB_REPO = 'armadit-eng/dashboard-app';
 
 // ── Cek update APK asli buat native (bukan cuma Service Worker PWA) ──
-// Status "Aplikasi" di strip Akun sebelumnya cuma ngecek Service Worker,
-// yang emang GAK PERNAH jalan di mode native — jadi buat native, statusnya
-// selalu "Terbaru" apapun kondisinya (informasi salah, bukan cuma gak
-// actionable). Ini bandingin versi APK yang ke-install (dari
-// Android.getAppVersion()) vs tag rilis terbaru di GitHub Releases.
-let _nativeAppUpdate = { checked:false, available:false, latestVersion:null, downloadUrl:null, notes:'' };
+let _nativeAppUpdate = { checked:false, available:false, installedVersion:null, installedCode:0, latestVersion:null, downloadUrl:null, notes:'' };
 let _updateToastShownThisSession = false;
 
-// Key localStorage buat lacak versi terakhir yang sudah ditampilkan lewat
-// dialog update — biar dialog cuma muncul SEKALI per versi baru (bukan
-// tiap kali app dibuka selama user belum update/dismiss dulu).
+// Key localStorage buat lacak versi terakhir yang ditunda ("Nanti") lewat
+// dialog update — biar dialog otomatis cuma muncul SEKALI per versi baru.
 const UPDATE_DIALOG_SEEN_KEY = 'update_dialog_seen_version';
 
+function getInstalledAppVersionInfo(){
+  let version = APP_VERSION;
+  let code = APP_VERSION_CODE;
+  try{
+    if(typeof Android !== 'undefined'){
+      if(typeof Android.getAppVersion === 'function'){
+        const v = Android.getAppVersion();
+        if(v) version = String(v).trim();
+      }
+      if(typeof Android.getAppVersionCode === 'function'){
+        const c = Number(Android.getAppVersionCode());
+        if(c > 0) code = c;
+      }
+    }
+  }catch(e){}
+  return { version, code };
+}
+
 function _compareVersions(a, b){
-  // "1.0.0.0" vs "1.0.1.0" dst — banding per-segmen numerik, bukan string.
-  // Return >0 kalau a lebih baru dari b, <0 kalau lebih lama, 0 kalau sama.
   const pa = String(a).replace(/^v/i,'').split('.').map(n=>parseInt(n,10)||0);
   const pb = String(b).replace(/^v/i,'').split('.').map(n=>parseInt(n,10)||0);
   const len = Math.max(pa.length, pb.length);
@@ -6031,13 +6048,10 @@ function _compareVersions(a, b){
   return 0;
 }
 
-// Fetch info rilis terbaru dari GitHub Releases sekali, dipakai bareng oleh
-// checkNativeAppVersion() (native) dan downloadApk() (web) — biar satu
-// sumber kebenaran, gak perlu update URL manual tiap rilis di 2 tempat.
 let _latestReleaseCache = null;
-async function fetchLatestGithubRelease(){
-  if(_latestReleaseCache) return _latestReleaseCache;
-  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+async function fetchLatestGithubRelease(forceRefresh){
+  if(_latestReleaseCache && !forceRefresh) return _latestReleaseCache;
+  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, { cache: 'no-store' });
   if(!res.ok) throw new Error('GitHub API status '+res.status);
   const data = await res.json();
   const apkAsset = (data.assets||[]).find(a => a.name && a.name.endsWith('.apk'));
@@ -6045,16 +6059,23 @@ async function fetchLatestGithubRelease(){
     tag: (data.tag_name||'').replace(/^v/i,''),
     apkUrl: apkAsset ? apkAsset.browser_download_url : null,
     htmlUrl: data.html_url || null,
-    notes: data.body || '', // catatan rilis (changelog) buat dialog update
+    notes: data.body || '',
+    publishedAt: data.published_at || ''
   };
   return _latestReleaseCache;
 }
 
-async function checkNativeAppVersion(){
-  if(!IS_NATIVE_ANDROID || typeof Android === 'undefined' || !Android.getAppVersion) return;
+async function checkNativeAppVersion(manual){
+  const info = getInstalledAppVersionInfo();
+  _nativeAppUpdate.installedVersion = info.version;
+  _nativeAppUpdate.installedCode = info.code;
+  if(!IS_NATIVE_ANDROID || typeof Android === 'undefined' || !Android.getAppVersion){
+    updatePintasanUpdateSub();
+    return;
+  }
   try{
-    const installed = Android.getAppVersion();
-    const release = await fetchLatestGithubRelease();
+    const installed = info.version;
+    const release = await fetchLatestGithubRelease(!!manual);
     if(!installed || !release.tag) throw new Error('versi kosong');
     const cmp = _compareVersions(release.tag, installed);
     _nativeAppUpdate.checked = true;
@@ -6062,34 +6083,54 @@ async function checkNativeAppVersion(){
     _nativeAppUpdate.available = cmp > 0;
     _nativeAppUpdate.downloadUrl = release.apkUrl || release.htmlUrl;
     _nativeAppUpdate.notes = release.notes || '';
-    // Dialog proaktif SEKALI per sesi (bukan tiap kali fungsi ini re-run) —
-    // biar user langsung tau ada update + fitur barunya pas buka app, tanpa
-    // perlu nemu2in sendiri di Home/Akun, tapi juga gak nge-spam tiap
-    // refresh. showUpdateDialog() sendiri juga ngecek localStorage biar gak
-    // muncul lagi kalau versi yang sama udah pernah dilihat/dismiss.
-    if(_nativeAppUpdate.available && !_updateToastShownThisSession){
-      _updateToastShownThisSession = true;
-      showUpdateDialog();
+    if(_nativeAppUpdate.available){
+      if(manual){
+        showUpdateDialog(true);
+      } else if(!_updateToastShownThisSession){
+        _updateToastShownThisSession = true;
+        showUpdateDialog(false);
+      }
+    } else if(manual){
+      showToast(`✅ Aplikasi sudah versi terbaru (v${installed})`);
     }
   }catch(e){
     log('Cek update APK gagal: '+e.message,'err');
-    _nativeAppUpdate.checked = false; // gagal cek ≠ "udah terbaru" — jangan klaim status yg gak pasti
+    _nativeAppUpdate.checked = false;
+    if(manual) showToast('⚠️ Gagal mengecek update: ' + e.message);
   }
   updatePintasanUpdateSub();
   try{ updateNotifBadge(); }catch(e){}
+  try{ refreshAboutAppModalIfOpen(); }catch(e){}
 }
 
 if(IS_NATIVE_ANDROID){
   document.addEventListener('DOMContentLoaded', ()=>{
-    // Delay dikit — kasih prioritas ke BLE auto-connect dulu pas boot,
-    // fetch ke GitHub ini gak urgent & gak butuh buru-buru.
-    setTimeout(checkNativeAppVersion, 4000);
+    setTimeout(()=>{ updatePintasanUpdateSub(); checkNativeAppVersion(false); }, 3500);
+  });
+} else {
+  document.addEventListener('DOMContentLoaded', ()=>{
+    setTimeout(()=>{ updatePintasanUpdateSub(); hydratePwaApkBannerInfo(); }, 800);
   });
 }
 
+async function hydratePwaApkBannerInfo(){
+  try{
+    const release = await fetchLatestGithubRelease(false);
+    if(!release || !release.tag) return;
+    _nativeAppUpdate.latestVersion = release.tag;
+    _nativeAppUpdate.notes = release.notes || '';
+    _nativeAppUpdate.downloadUrl = release.apkUrl || release.htmlUrl;
+    const badge = document.getElementById('apkBannerVerBadge');
+    if(badge) badge.textContent = '· v' + release.tag;
+    const sub = document.getElementById('apkBannerSub');
+    if(sub && release.notes){
+      const firstBullet = release.notes.split('\n').map(l=>l.trim()).find(l=>/^[-*•]\s+/.test(l));
+      if(firstBullet) sub.textContent = 'Terbaru: ' + firstBullet.replace(/^[-*•]\s+/, '');
+    }
+  }catch(e){}
+}
+
 document.addEventListener('DOMContentLoaded', ()=>{
-  // Muat cache data charging Molis lokal & jalankan sinkronisasi latar belakang
-  // non-blocking setelah inisialisasi awal app selesai.
   setTimeout(()=>{
     try{
       if(typeof initMolisChargingWorkflow === 'function') initMolisChargingWorkflow();
@@ -6100,64 +6141,139 @@ document.addEventListener('DOMContentLoaded', ()=>{
 });
 
 // ── Dialog "Update Tersedia" ──
-// Muncul otomatis pas app dibuka & ada versi baru: nampilin nomor versi +
-// changelog (dari body GitHub Release, format Markdown sederhana) plus 2
-// pilihan — TUTUP (nutup dialog, gak ditawarin lagi utk versi yg sama) dan
-// UPDATE SEKARANG (langsung jalanin proses download+install yg sama kayak
-// tombol "Update Aplikasi" di menu Home).
 function _formatChangelogMd(md){
   if(!md || !md.trim()){
-    return '<div style="color:var(--muted)">Tidak ada catatan rilis untuk versi ini.</div>';
+    return '<div style="color:var(--muted)">Pembaruan stabilitas, perbaikan bug, dan peningkatan fitur.</div>';
   }
   const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inlineFmt = s => esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`([^`]+)`/g, '<code style="background:rgba(128,128,128,.18);padding:1px 4px;border-radius:4px;font-size:11px">$1</code>');
   const lines = md.replace(/\r\n/g,'\n').split('\n');
   let html = '', inList = false;
   lines.forEach(raw=>{
     const line = raw.trim();
     if(!line){ if(inList){ html += '</ul>'; inList = false; } return; }
+    if(/^\*\*Full Changelog\*\*/i.test(line)) return;
     const bullet = line.match(/^[-*•]\s+(.*)/);
     const heading = line.match(/^#{1,6}\s+(.*)/);
     if(bullet){
       if(!inList){ html += '<ul style="margin:0 0 8px;padding-left:18px">'; inList = true; }
-      html += '<li style="margin-bottom:4px">'+esc(bullet[1])+'</li>';
+      html += '<li style="margin-bottom:4px">'+inlineFmt(bullet[1])+'</li>';
     } else if(heading){
       if(inList){ html += '</ul>'; inList = false; }
-      html += '<div style="font-weight:700;margin:6px 0 4px">'+esc(heading[1])+'</div>';
+      html += '<div style="font-weight:700;margin:6px 0 4px;color:var(--green)">'+inlineFmt(heading[1])+'</div>';
     } else {
       if(inList){ html += '</ul>'; inList = false; }
-      html += '<div style="margin-bottom:6px">'+esc(line)+'</div>';
+      html += '<div style="margin-bottom:6px">'+inlineFmt(line)+'</div>';
     }
   });
   if(inList) html += '</ul>';
-  return html;
+  return html || '<div style="color:var(--muted)">Pembaruan stabilitas dan peningkatan fitur.</div>';
 }
 
-function showUpdateDialog(){
-  if(!_nativeAppUpdate.available || !_nativeAppUpdate.latestVersion) return;
-  // Udah pernah dilihat/dismiss buat versi ini — jangan nge-spam tiap buka app.
-  let seen = null;
-  try{ seen = localStorage.getItem(UPDATE_DIALOG_SEEN_KEY); }catch(e){}
-  if(seen === _nativeAppUpdate.latestVersion) return;
+function showUpdateDialog(force){
+  const isPwaUpdate = !IS_NATIVE_ANDROID && pendingSW;
+  if(!isPwaUpdate && (!_nativeAppUpdate.available || !_nativeAppUpdate.latestVersion)) return;
+  const targetVer = _nativeAppUpdate.latestVersion || 'Baru';
+  if(!force){
+    let seen = null;
+    try{ seen = localStorage.getItem(UPDATE_DIALOG_SEEN_KEY); }catch(e){}
+    if(seen === targetVer) return;
+  }
 
+  const info = getInstalledAppVersionInfo();
+  const instEl  = document.getElementById('updateDialogInstalled');
   const verEl   = document.getElementById('updateDialogVersion');
   const notesEl = document.getElementById('updateDialogNotes');
-  if(verEl)   verEl.textContent = 'v'+_nativeAppUpdate.latestVersion;
-  if(notesEl) notesEl.innerHTML = _formatChangelogMd(_nativeAppUpdate.notes);
+  if(instEl)  instEl.textContent = 'v' + info.version + (info.code ? ` (${info.code})` : '');
+  if(verEl)   verEl.textContent  = _nativeAppUpdate.latestVersion ? ('v' + _nativeAppUpdate.latestVersion) : 'Versi Baru';
+  if(notesEl) notesEl.innerHTML  = _formatChangelogMd(_nativeAppUpdate.notes);
 
   const modal = document.getElementById('updateDialogModal');
   if(modal) modal.classList.add('show');
-  try{ localStorage.setItem(UPDATE_DIALOG_SEEN_KEY, _nativeAppUpdate.latestVersion); }catch(e){}
+}
+
+function deferAppUpdate(){
+  const targetVer = _nativeAppUpdate.latestVersion || (pendingSW ? 'pwa-pending' : '');
+  if(targetVer){
+    try{ localStorage.setItem(UPDATE_DIALOG_SEEN_KEY, targetVer); }catch(e){}
+  }
+  closeModal('updateDialogModal');
+  showToast('⏳ Update ditunda. Kamu bisa update kapan saja lewat Home atau tab Akun.');
 }
 
 function closeUpdateDialog(){
-  closeModal('updateDialogModal');
+  deferAppUpdate();
 }
 
 function startUpdateFromDialog(){
   closeModal('updateDialogModal');
-  // Pakai alur yg persis sama kayak menu "Update Aplikasi" di Home —
-  // download+install lewat Android bridge (atau fallback buka link browser).
-  handleAplikasiStripTap();
+  if(!IS_NATIVE_ANDROID && pendingSW){
+    applyUpdate();
+    return;
+  }
+  startApkDownloadNow();
+}
+
+function openPwaSiteUrl(){
+  try{ if(typeof Android !== 'undefined' && typeof Android.openUrl === 'function'){ Android.openUrl(PWA_WEB_URL); return; } }catch(e){}
+  window.open(PWA_WEB_URL, '_blank');
+}
+
+function openAboutAppModal(){
+  refreshAboutAppModalIfOpen(true);
+  const modal = document.getElementById('aboutAppModal');
+  if(modal) modal.classList.add('show');
+}
+
+function refreshAboutAppModalIfOpen(forcePopulate){
+  const modal = document.getElementById('aboutAppModal');
+  if(!forcePopulate && (!modal || !modal.classList.contains('show'))) return;
+  const info = getInstalledAppVersionInfo();
+  const curEl = document.getElementById('aboutInstalledVer');
+  const stEl  = document.getElementById('aboutUpdateStatus');
+  const ntEl  = document.getElementById('aboutChangelogBox');
+  const btnEl = document.getElementById('aboutActionBtn');
+  if(curEl) curEl.textContent = `v${info.version}` + (info.code ? ` (Build ${info.code})` : '');
+  if(IS_NATIVE_ANDROID){
+    if(!_nativeAppUpdate.checked){
+      if(stEl) stEl.innerHTML = '<span style="color:var(--muted)">Belum dicek / menunggu jaringan</span>';
+      if(ntEl) ntEl.style.display = 'none';
+      if(btnEl){ btnEl.textContent = '🔄 Cek Update Sekarang'; btnEl.onclick = ()=>{ checkNativeAppVersion(true); }; }
+    } else if(_nativeAppUpdate.available){
+      if(stEl) stEl.innerHTML = `<span style="color:var(--warning);font-weight:700">Versi baru v${escapeHtml(_nativeAppUpdate.latestVersion)} tersedia!</span>`;
+      if(ntEl){
+        ntEl.style.display = '';
+        ntEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px">Perubahan di v${escapeHtml(_nativeAppUpdate.latestVersion)}:</div>` + _formatChangelogMd(_nativeAppUpdate.notes);
+      }
+      if(btnEl){ btnEl.textContent = '⬇️ Update Sekarang'; btnEl.onclick = ()=>{ closeModal('aboutAppModal'); showUpdateDialog(true); }; }
+    } else {
+      if(stEl) stEl.innerHTML = '<span style="color:var(--green);font-weight:700">✅ Sudah versi terbaru</span>';
+      if(ntEl && _nativeAppUpdate.notes){
+        ntEl.style.display = '';
+        ntEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px">Catatan rilis v${escapeHtml(_nativeAppUpdate.latestVersion || info.version)}:</div>` + _formatChangelogMd(_nativeAppUpdate.notes);
+      } else if(ntEl){
+        ntEl.style.display = 'none';
+      }
+      if(btnEl){ btnEl.textContent = '🔄 Cek Update Ulang'; btnEl.onclick = ()=>{ checkNativeAppVersion(true); }; }
+    }
+  } else {
+    const pwaReady = !!(document.getElementById('updateBanner')?.classList.contains('show') || pendingSW);
+    if(stEl) stEl.innerHTML = pwaReady
+      ? '<span style="color:var(--warning);font-weight:700">Pembaruan PWA siap diterapkan</span>'
+      : '<span style="color:var(--green);font-weight:700">Web / PWA (gesits.pages.dev)</span>';
+    if(ntEl && _nativeAppUpdate.notes){
+      ntEl.style.display = '';
+      ntEl.innerHTML = `<div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:5px">Catatan rilis terbaru:</div>` + _formatChangelogMd(_nativeAppUpdate.notes);
+    } else if(ntEl){
+      ntEl.style.display = 'none';
+    }
+    if(btnEl){
+      btnEl.textContent = pwaReady ? '⬇️ Update Sekarang' : '📲 Download APK Terbaru';
+      btnEl.onclick = ()=>{ closeModal('aboutAppModal'); if(pwaReady) showPwaUpdatePrompt(); else downloadApk(); };
+    }
+  }
 }
 
 // Flag: lagi proses download+install APK, biar gak dobel-trigger kalau
@@ -6203,56 +6319,50 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }catch(e){}
 });
 
-function handleAplikasiStripTap(){
-  if(IS_NATIVE_ANDROID){
-    if(!_nativeAppUpdate.checked){
-      // Belum sempat/berhasil cek — coba lagi sekarang, jangan klaim status
-      // yg gak pasti (gak nunjukin "sudah terbaru" kalau emang belum tau).
-      showToast('🔄 Mengecek versi terbaru...');
-      checkNativeAppVersion();
-      return;
-    }
-    if(_nativeAppUpdate.available && _nativeAppUpdate.downloadUrl){
-      if(_apkDownloading){
-        showToast('⬇️ Masih mengunduh update, tunggu sebentar...');
-        return;
-      }
-      // Native versi baru punya Android.downloadAndInstallApk — langsung
-      // download di background pakai DownloadManager Android (progress
-      // realtime ditampilkan di kartu bawah tab Akun), lalu buka installer
-      // otomatis begitu selesai. Kalau APK yang ke-install sekarang masih
-      // versi lama (belum punya method ini), fallback ke buka link di
-      // browser biar tetap jalan.
-      if(typeof Android !== 'undefined' && typeof Android.downloadAndInstallApk === 'function'){
-        _apkDownloading = true;
-        updatePintasanUpdateSub();
-        setApkProgressVisible(true);
-        setApkProgressPct(0);
-        showToast('⬇️ Mengunduh versi '+_nativeAppUpdate.latestVersion+'...');
-        try{
-          Android.downloadAndInstallApk(_nativeAppUpdate.downloadUrl);
-        }catch(e){
-          _apkDownloading = false;
-          updatePintasanUpdateSub();
-          setApkProgressVisible(false);
-          showToast('⚠️ Gagal mulai download: '+e.message);
-        }
-      }else{
-        showToast('⬇️ Versi '+_nativeAppUpdate.latestVersion+' tersedia, buka link download...');
-        window.open(_nativeAppUpdate.downloadUrl, '_blank');
-      }
-    }else{
-      showToast('✅ Aplikasi sudah versi terbaru');
-    }
+function startApkDownloadNow(){
+  if(!_nativeAppUpdate.available || !_nativeAppUpdate.downloadUrl) return;
+  if(_apkDownloading){
+    showToast('⬇️ Masih mengunduh update, tunggu sebentar...');
     return;
   }
-  // Mode web/PWA — cek Service Worker seperti biasa. PENTING: banner pakai
-  // class .show buat animasi (bukan display:none), jadi cek statusnya lewat
-  // classList, BUKAN banner.style.display (itu bug lama: inline style gak
-  // pernah di-set jadi kondisinya selalu true / gimmick "selalu ada update").
+  if(typeof Android !== 'undefined' && typeof Android.downloadAndInstallApk === 'function'){
+    _apkDownloading = true;
+    updatePintasanUpdateSub();
+    setApkProgressVisible(true);
+    setApkProgressPct(0);
+    showToast('⬇️ Mengunduh versi '+_nativeAppUpdate.latestVersion+'...');
+    try{
+      Android.downloadAndInstallApk(_nativeAppUpdate.downloadUrl);
+    }catch(e){
+      _apkDownloading = false;
+      updatePintasanUpdateSub();
+      setApkProgressVisible(false);
+      showToast('⚠️ Gagal mulai download: '+e.message);
+    }
+  } else {
+    showToast('⬇️ Versi '+_nativeAppUpdate.latestVersion+' tersedia, buka link download...');
+    try{ if(typeof Android !== 'undefined' && typeof Android.openUrl === 'function'){ Android.openUrl(_nativeAppUpdate.downloadUrl); return; } }catch(e){}
+    window.open(_nativeAppUpdate.downloadUrl, '_blank');
+  }
+}
+
+function handleAplikasiStripTap(){
+  if(IS_NATIVE_ANDROID){
+    if(_apkDownloading){
+      showToast('⬇️ Masih mengunduh update, tunggu sebentar...');
+      return;
+    }
+    if(_nativeAppUpdate.checked && _nativeAppUpdate.available && _nativeAppUpdate.downloadUrl){
+      showUpdateDialog(true);
+      return;
+    }
+    showToast('🔄 Mengecek versi terbaru...');
+    checkNativeAppVersion(true);
+    return;
+  }
   const banner = document.getElementById('updateBanner');
-  if(banner && banner.classList.contains('show')) applyUpdate();
-  else showToast('✅ Aplikasi sudah versi terbaru');
+  if((banner && banner.classList.contains('show')) || pendingSW) showPwaUpdatePrompt();
+  else openAboutAppModal();
 }
 
 // ── Callback dari native (MainActivity.java) soal status download APK ──
@@ -6289,15 +6399,21 @@ async function downloadApk(){
   // rate-limit API, dll), fallback ke URL statis lama biar tombol tetap
   // jalan (mendingan ngasih APK versi lama drpd gak dapet apa2 sama sekali).
   let url = APK_DOWNLOAD_URL;
+  let hasDirectApk = false;
   try{
     const release = await fetchLatestGithubRelease();
-    if(release.apkUrl) url = release.apkUrl;
+    if(release.apkUrl){
+      url = release.apkUrl;
+      hasDirectApk = true;
+    } else if(release.htmlUrl){
+      url = release.htmlUrl;
+    }
   }catch(e){
     log('Gagal ambil link rilis terbaru, pakai URL fallback: '+e.message,'sys');
   }
-  if(url.includes('USERNAME/REPO')){
-    log('APK_DOWNLOAD_URL belum diisi link asli — masih placeholder','err');
-    showToast('⚠️ Link APK belum diatur developer');
+  if(!hasDirectApk){
+    window.open(url, '_blank');
+    showToast('⬇️ Membuka halaman rilis APK terbaru…');
     return;
   }
   if(_apkDownloading){
@@ -6305,13 +6421,6 @@ async function downloadApk(){
     return;
   }
 
-  // Cara LAMA — serahkan sepenuhnya ke browser lewat <a download>. Dipakai
-  // sebagai fallback kalau fetch() gagal (mis. CORS diblokir GitHub, atau
-  // browser lama gak support ReadableStream). PENTING: ini juga penyebab
-  // bug "progress nyangkut" yang dilaporkan user — GitHub Releases nge-
-  // redirect ke objects.githubusercontent.com yg ngirim response chunked
-  // tanpa sinyal selesai yg jelas, jadi UI download bawaan Chrome/Brave
-  // suka nyangkut di status "sedang download" walau size udah 100% match.
   const downloadViaDirectLink = ()=>{
     setApkProgressVisible(false);
     const a = document.createElement('a');
@@ -8071,56 +8180,52 @@ async function updateLocationCardNew(){
 }
 
 function updatePintasanUpdateSub(){
+  const info = getInstalledAppVersionInfo();
+  const verLabel = 'v' + info.version;
   const sub = document.getElementById('pintasanUpdateSub');
-  // PENTING: banner PWA pakai class .show buat animasi geser (bukan
-  // display:none) — cek lewat classList, bukan style.display/computedStyle
-  // (itu bug lama: selalu ke-detect "true" krn inline style gak pernah
-  // di-set, bikin Home selalu klaim "Versi terbaru tersedia!" padahal
-  // enggak — itu yg dimaksud "gimmick").
   const banner = document.getElementById('updateBanner');
 
   if(sub){
     if(IS_NATIVE_ANDROID){
-      // Native: satu2nya sumber kebenaran adalah _nativeAppUpdate (hasil
-      // banding versi APK vs GitHub Releases), SAMA PERSIS kayak yg dipakai
-      // strip "Aplikasi" di tab Akun — biar Home & Akun selalu konsisten.
       if(!_nativeAppUpdate.checked){
-        sub.textContent = 'Cek status…';
+        sub.textContent = `Terpasang ${verLabel} · Ketuk cek update`;
         sub.style.color = 'var(--muted)';
       }else if(_nativeAppUpdate.available){
-        sub.textContent = 'Versi '+_nativeAppUpdate.latestVersion+' tersedia!';
+        sub.textContent = `${verLabel} → v${_nativeAppUpdate.latestVersion} tersedia!`;
         sub.style.color = 'var(--warning)';
       }else{
-        sub.textContent = 'Sudah versi terbaru';
+        sub.textContent = `Terpasang ${verLabel} (Terbaru)`;
         sub.style.color = 'var(--muted)';
       }
     }else{
       const available = banner && banner.classList.contains('show');
-      sub.textContent = available ? 'Versi terbaru tersedia!' : 'Sudah versi terbaru';
+      sub.textContent = available ? 'Versi terbaru tersedia!' : `Terpasang ${verLabel} (Terbaru)`;
       sub.style.color = available ? 'var(--warning)' : 'var(--muted)';
     }
   }
   const stripApp = document.getElementById('akunStripApp');
   if(stripApp){
     if(IS_NATIVE_ANDROID){
-      // Native gak pernah punya Service Worker aktif, jadi banner PWA gak
-      // relevan buat native. Pakai hasil checkNativeAppVersion() (bandingin
-      // APK vs GitHub Releases) instead.
       if(!_nativeAppUpdate.checked){
-        stripApp.textContent = 'Cek…';
+        stripApp.textContent = verLabel;
         stripApp.style.color = 'var(--muted)';
       }else if(_nativeAppUpdate.available){
-        stripApp.textContent = 'Update';
+        stripApp.textContent = `${verLabel} · Baru!`;
         stripApp.style.color = 'var(--warning)';
       }else{
-        stripApp.textContent = 'Terbaru';
+        stripApp.textContent = verLabel;
         stripApp.style.color = 'var(--green)';
       }
     }else{
       const available = banner && banner.classList.contains('show');
-      stripApp.textContent = available ? 'Update' : 'Terbaru';
+      stripApp.textContent = available ? 'Update' : verLabel;
       stripApp.style.color = available ? 'var(--warning)' : 'var(--green)';
     }
+  }
+  const aboutVerEl = document.getElementById('akunAboutVer');
+  if(aboutVerEl){
+    aboutVerEl.textContent = _nativeAppUpdate.available ? `${verLabel} → Baru!` : verLabel;
+    aboutVerEl.style.color = _nativeAppUpdate.available ? 'var(--warning)' : 'var(--muted)';
   }
 }
 
@@ -8160,7 +8265,10 @@ function updateNotifBadge(){
 }
 function openNotifPanel(){
   const items=[];
-  if(isAppUpdateAvailable()) items.push('🔄 Update aplikasi tersedia');
+  if(isAppUpdateAvailable()){
+    const info = getInstalledAppVersionInfo();
+    items.push(`🔄 Update v${_nativeAppUpdate.latestVersion || 'baru'} tersedia (terpasang v${info.version})`);
+  }
   const maint = getMaintStatus();
   if(maint && maint.status!=='ok') items.push(maint.status==='due' ? '🔧 Servis berkala sudah lewat jadwal' : '🔧 Servis berkala mendekati jadwal');
   const sa = document.getElementById('smartAlertBanner');
@@ -8173,6 +8281,7 @@ function openNotifPanel(){
   if(dtcCount>0 && !saShowing) items.push(`⚠️ ${dtcCount} error aktif — cek tab Diagnosa`);
   if(!items.length){ showToast('🔔 Tidak ada notifikasi baru'); return; }
   showToast(items.join('\n'));
+  if(IS_NATIVE_ANDROID && isAppUpdateAvailable()) showUpdateDialog(true);
 }
 
 function updateTripVal(){
@@ -25686,9 +25795,26 @@ function showUpdateBanner(worker){
   if (el) el.classList.add('show');
   if(!_updateToastShownThisSession){
     _updateToastShownThisSession = true;
-    showToast('🆕 Update tersedia — ketuk banner di bawah untuk refresh');
+    showPwaUpdatePrompt(false);
   }
   try{ updatePintasanUpdateSub(); updateNotifBadge(); }catch(e){}
+}
+function dismissUpdateBanner(){
+  const el = document.getElementById('updateBanner');
+  if (el) el.classList.remove('show');
+  showToast('⏳ Update PWA ditunda. Ketuk Update Aplikasi di Home kapan saja.');
+}
+async function showPwaUpdatePrompt(force = true){
+  try{
+    if(!_nativeAppUpdate.latestVersion){
+      const release = await fetchLatestGithubRelease(false);
+      if(release){
+        _nativeAppUpdate.latestVersion = release.tag;
+        _nativeAppUpdate.notes = release.notes || '';
+      }
+    }
+  }catch(e){}
+  showUpdateDialog(force);
 }
 function applyUpdate(){
   if (pendingSW) pendingSW.postMessage({ type: 'SKIP_WAITING' });
@@ -27072,14 +27198,42 @@ function renderFuelSavings(){
 </div>
 
 <!-- ══ DIALOG UPDATE APLIKASI ══ -->
-<div class="modal-overlay" id="updateDialogModal">
-  <div class="modal" style="max-height:80vh;overflow-y:auto">
-    <h3>🆕 Update Tersedia — <span id="updateDialogVersion">v-</span></h3>
-    <p>Ada versi baru GESITS Dashboard. Berikut yang baru di versi ini:</p>
-    <div id="updateDialogNotes" style="font-size:13px;line-height:1.5;color:#fff;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:6px">—</div>
+<div class="modal-overlay" id="updateDialogModal" onclick="if(event.target===this)deferAppUpdate()">
+  <div class="modal" style="max-height:84vh;overflow-y:auto">
+    <h3>🆕 Pembaruan Aplikasi Tersedia</h3>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--muted)">Terpasang saat ini</div>
+        <div id="updateDialogInstalled" style="font-size:13px;font-weight:700;color:var(--text);margin-top:2px">—</div>
+      </div>
+      <div style="flex:1;background:rgba(var(--green-rgb),.1);border:1px solid rgba(var(--green-rgb),.35);border-radius:10px;padding:8px 10px">
+        <div style="font-size:10px;color:var(--muted)">Versi terbaru</div>
+        <div id="updateDialogVersion" style="font-size:13px;font-weight:800;color:var(--green);margin-top:2px">v-</div>
+      </div>
+    </div>
+    <div style="font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:6px">Apa saja yang diubah:</div>
+    <div id="updateDialogNotes" style="font-size:12.5px;line-height:1.5;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:8px;max-height:220px;overflow-y:auto">—</div>
     <div class="modal-actions">
-      <button class="modal-btn cancel" onclick="closeUpdateDialog()">TUTUP</button>
-      <button class="modal-btn primary" onclick="startUpdateFromDialog()">⬇️ UPDATE SEKARANG</button>
+      <button class="modal-btn cancel" onclick="deferAppUpdate()">Nanti</button>
+      <button class="modal-btn primary" onclick="startUpdateFromDialog()">⬇️ Update Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DIALOG TENTANG & VERSI APLIKASI ══ -->
+<div class="modal-overlay" id="aboutAppModal" onclick="if(event.target===this)closeModal('aboutAppModal')">
+  <div class="modal" style="max-height:84vh;overflow-y:auto">
+    <h3>ℹ️ Tentang Aplikasi</h3>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:12px;line-height:1.6">
+      <div><b>GESITS Dashboard &amp; Nav</b></div>
+      <div style="color:var(--muted)">Versi terpasang: <b id="aboutInstalledVer" style="color:var(--text)">—</b></div>
+      <div style="color:var(--muted)">Status update: <span id="aboutUpdateStatus">—</span></div>
+      <div style="color:var(--muted)">Versi Web / PWA: <span onclick="openPwaSiteUrl()" style="color:var(--green);font-weight:700;cursor:pointer;text-decoration:underline">gesits.pages.dev</span></div>
+    </div>
+    <div id="aboutChangelogBox" style="display:none;font-size:12px;line-height:1.5;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;max-height:210px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeModal('aboutAppModal')">Tutup</button>
+      <button class="modal-btn primary" id="aboutActionBtn">🔄 Cek Update</button>
     </div>
   </div>
 </div>

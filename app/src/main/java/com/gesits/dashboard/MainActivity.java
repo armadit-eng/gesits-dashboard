@@ -341,15 +341,26 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getAppVersion() {
             // Dipakai JS buat bandingin versi APK yang ke-install sekarang vs
-            // versi terbaru di GitHub Releases (armadit-eng/Gesits-Classic),
-            // biar status "Aplikasi" di Akun beneran ngecek update APK asli —
-            // bukan cuma ngecek Service Worker PWA (yang gak pernah jalan di
-            // native, jadi sebelumnya statusnya gak berarti apa2 buat native).
+            // versi terbaru di GitHub Releases (armadit-eng/dashboard-app),
+            // biar status "Aplikasi" di Akun & Home selalu cek update APK asli.
             try {
                 PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
                 return pInfo.versionName != null ? pInfo.versionName : "";
             } catch (Exception e) {
                 return "";
+            }
+        }
+
+        @JavascriptInterface
+        public long getAppVersionCode() {
+            try {
+                PackageInfo pInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
+                if (Build.VERSION.SDK_INT >= 28) {
+                    return pInfo.getLongVersionCode();
+                }
+                return pInfo.versionCode;
+            } catch (Exception e) {
+                return 0L;
             }
         }
 
