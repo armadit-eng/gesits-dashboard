@@ -8,7 +8,7 @@
 
 // Naikkan VERSION ini setiap kali deploy perubahan baru ke GitHub.
 // Browser bakal deteksi sw.js berubah → toast "Update tersedia" muncul di app.
-const VERSION     = 'v1.0.1.25';
+const VERSION     = 'v1.0.1.26';
 const SHELL_CACHE = `gesits-shell-${VERSION}`;
 const TILE_CACHE  = 'gesits-tiles-v2.5.0';
 const TILE_CACHE_MAX = 600; // batas jumlah tile tersimpan, biar storage HP nggak penuh
