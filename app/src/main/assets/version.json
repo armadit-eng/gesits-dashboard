@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.26",
-  "versionCode": 7,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.26/GesitsDashboard-v1.0.1.26-vc7-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.26",
-  "notes": "- feat: add Cloudflare GraphQL API bridge to WebView"
+  "version": "1.0.1.27",
+  "versionCode": 8,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.27/GesitsDashboard-v1.0.1.27-vc8-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.27",
+  "notes": "- feat: add mp4-muxer and app settings interface"
 }
