@@ -35,6 +35,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0'
 
       - name: Bump versionCode and versionName
         id: bump
@@ -86,8 +88,6 @@ jobs:
               out.write(f"version_code={new_vc}\n")
               out.write(f"version_name={new_vn}\n")
           EOF
-        env:
-          GITHUB_OUTPUT: ${{ github.output }}
 
       - name: Prepare debug keystore
         run: |
