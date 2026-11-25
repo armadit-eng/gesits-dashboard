@@ -62,8 +62,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
 import org.json.JSONObject;
@@ -1707,6 +1709,53 @@ public class MainActivity extends Activity {
                     }
                 }
             }, "MolisSyncFetch").start();
+        }
+
+        // Query khusus Cloudflare GraphQL Analytics API (bebas CORS WebView).
+        // URL dikunci ke https://api.cloudflare.com/client/v4/graphql dan token hanya berasal dari input developer lokal.
+        @JavascriptInterface
+        public void postCloudflareGraphql(final String requestId, final String cfToken, final String jsonBody) {
+            if (requestId == null || requestId.trim().isEmpty()) return;
+            final String token = cfToken == null ? "" : cfToken.trim();
+            final String payload = jsonBody == null ? "" : jsonBody;
+            if (token.isEmpty() || payload.isEmpty()) {
+                deliverNativeFetchResult(requestId, false, 400, "", "Token atau query Cloudflare kosong");
+                return;
+            }
+            new Thread(() -> {
+                Response response = null;
+                try {
+                    MediaType jsonType = MediaType.parse("application/json; charset=utf-8");
+                    RequestBody reqBody = RequestBody.create(payload, jsonType);
+                    Request req = new Request.Builder()
+                        .url("https://api.cloudflare.com/client/v4/graphql")
+                        .header("Authorization", "Bearer " + token)
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "application/json")
+                        .post(reqBody)
+                        .build();
+                    response = syncHttpClient.newCall(req).execute();
+                    int code = response.code();
+                    ResponseBody body = response.body();
+                    byte[] raw = body != null ? body.bytes() : new byte[0];
+                    if (fetchedPayloads.size() >= 8) {
+                        fetchedPayloads.clear();
+                    }
+                    fetchedPayloads.put(requestId, raw);
+                    if (!response.isSuccessful()) {
+                        deliverNativeFetchResult(requestId, false, code, "", "HTTP " + code);
+                        return;
+                    }
+                    deliverNativeFetchResult(requestId, true, code, "", "");
+                } catch (Exception e) {
+                    deliverNativeFetchResult(requestId, false, 0, "",
+                        e.getMessage() != null ? e.getMessage() : "Gagal terhubung ke Cloudflare");
+                } finally {
+                    if (response != null) {
+                        try { response.close(); } catch (Exception ignored) {}
+                    }
+                }
+            }, "CloudflareAnalyticsFetch").start();
         }
 
     } // ← TUTUP JsBridge

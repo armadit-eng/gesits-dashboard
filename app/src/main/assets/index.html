@@ -1121,6 +1121,17 @@ body.nav-fullscreen .nav-searchbar{left:56px}
 .sos-hazard-overlay{display:none;position:fixed;inset:0;z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;color:#fff;font-weight:800;cursor:pointer}
 .sos-hazard-overlay.show{display:flex;animation:sosFlash 0.9s infinite}
 @keyframes sosFlash{0%,49%{background:#d50000}50%,100%{background:#ffab00;color:#111}}
+.chg-tab-row{display:flex;gap:6px;margin-bottom:10px}
+.chg-tab-btn{flex:1;padding:7px 10px;border-radius:10px;border:1px solid var(--border);background:var(--card);color:var(--muted);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.chg-tab-btn.active{border-color:var(--green);color:var(--green);background:rgba(var(--green-rgb),.12)}
+.chg-kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px}
+.chg-kpi{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:9px 11px}
+.chg-kpi-lbl{font-size:10px;color:var(--muted)}
+.chg-kpi-val{font-size:15px;font-weight:800;font-family:'Rajdhani',sans-serif;margin-top:2px;color:var(--text)}
+.rc-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.rc-table th,.rc-table td{padding:6px 5px;border-bottom:1px solid var(--border);text-align:left}
+.rc-table th{color:var(--muted);font-size:10px;text-transform:uppercase}
+.rc-table tr.active-row{background:rgba(var(--green-rgb),.1);font-weight:700}
 
 /* Destination panel */
 .dest-panel{
@@ -3092,6 +3103,16 @@ function motoImgFallback(img){
           <div><div class="pintasan-title">Darurat &amp; Touring</div><div class="pintasan-sub">Kirim SOS &amp; SPLU terdekat</div></div>
           <div class="pintasan-chev">›</div>
         </div>
+        <div class="pintasan-item" onclick="openChargeMonitorModal()">
+          <div class="pintasan-ico" style="background:rgba(0,229,255,.16);color:#00e5ff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+          <div><div class="pintasan-title">Monitor &amp; Log Cas</div><div class="pintasan-sub" id="pintasanChargeSub">Alarm target &amp; biaya listrik</div></div>
+          <div class="pintasan-chev">›</div>
+        </div>
+        <div class="pintasan-item" onclick="openRangeCalcModal()">
+          <div class="pintasan-ico" style="background:rgba(255,167,38,.16);color:#ffa726"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+          <div><div class="pintasan-title">Kalkulator Jarak</div><div class="pintasan-sub">Estimasi jarak &amp; eco speed</div></div>
+          <div class="pintasan-chev">›</div>
+        </div>
         <div class="pintasan-item" onclick="showToast('Buka menu ⋮ di pojok kanan atas untuk Bantuan/FAQ (kalau tersedia), atau hubungi penjual GESITS kamu.')">
           <div class="pintasan-ico" style="background:rgba(120,144,156,.16);color:#90a4ae"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
           <div><div class="pintasan-title">Bantuan</div><div class="pintasan-sub">Pusat bantuan</div></div>
@@ -4323,6 +4344,236 @@ function motoImgFallback(img){
   <div style="font-size:13px;font-weight:600;opacity:.9">Ketuk layar di mana saja untuk mematikan</div>
 </div>
 
+<!-- ══ MONITOR CAS & LOG BIAYA PENGISIAN ══ -->
+<div class="np-sheet-bg" id="chargeMonitorSheet" onclick="if(event.target===this)closeNpSheet('chargeMonitorSheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title">⚡ Monitor &amp; Log Pengisian</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('chargeMonitorSheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div class="molis-stat-card" id="chgLiveBox">Memuat status baterai…</div>
+
+      <div class="chg-tab-row">
+        <button type="button" class="chg-tab-btn active" id="chgTabBtnMonitor" onclick="switchChargeTab('monitor')">⏱️ Estimator &amp; Alarm</button>
+        <button type="button" class="chg-tab-btn" id="chgTabBtnLog" onclick="switchChargeTab('log')">🧾 Catat &amp; Riwayat</button>
+      </div>
+
+      <div id="chgTabMonitor">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="uuid-field" style="flex:1;margin-bottom:0">
+            <label>SOC Awal / Kini (%)</label>
+            <input id="chgCurSocInput" type="number" min="0" max="99" value="35" oninput="recalcChargeMonitor()" style="font-family:inherit">
+          </div>
+          <div class="uuid-field" style="flex:1;margin-bottom:0">
+            <label>Target SOC (%)</label>
+            <input id="chgTargetSocInput" type="number" min="20" max="100" value="90" oninput="recalcChargeMonitor()" style="font-family:inherit">
+          </div>
+        </div>
+        <div class="preset-row" id="chgTargetPresetRow" style="margin-bottom:8px">
+          <button type="button" class="preset-btn" onclick="setChgTargetPreset(80,this)">80% Awet</button>
+          <button type="button" class="preset-btn active" onclick="setChgTargetPreset(90,this)">90% Touring</button>
+          <button type="button" class="preset-btn" onclick="setChgTargetPreset(100,this)">100% Penuh</button>
+        </div>
+
+        <div style="font-size:11px;font-weight:700;margin-bottom:5px">Daya Charger (Watt):</div>
+        <div class="preset-row" id="chgPowerRow" style="margin-bottom:8px">
+          <button type="button" class="preset-btn" data-w="350" onclick="setChgPowerPreset(350,this)">350W Std</button>
+          <button type="button" class="preset-btn" data-w="600" onclick="setChgPowerPreset(600,this)">600W</button>
+          <button type="button" class="preset-btn active" data-w="850" onclick="setChgPowerPreset(850,this)">850W Fast</button>
+          <button type="button" class="preset-btn" data-w="0" onclick="useLiveBmsPower(this)">Live BMS</button>
+        </div>
+        <div class="uuid-field">
+          <label>Custom Daya Charger (W)</label>
+          <input id="chgPowerInput" type="number" min="50" max="5000" value="850" oninput="recalcChargeMonitor()" style="font-family:inherit">
+        </div>
+
+        <div class="chg-kpi-grid" id="chgEstGrid"></div>
+
+        <label style="display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 11px;cursor:pointer;margin-bottom:8px">
+          <input id="chgAlarmChk" type="checkbox" style="width:17px;height:17px;flex:none" onchange="toggleChargeTargetAlarm(this.checked)">
+          <span>🔔 Bunyikan alarm saat SOC live mencapai target</span>
+        </label>
+        <button class="modal-btn primary" style="width:100%" onclick="prefillChargeLogFromMonitor()">➕ Catat Sesi Ini ke Riwayat Biaya</button>
+      </div>
+
+      <div id="chgTabLog" style="display:none">
+        <div class="chg-kpi-grid" id="chgLogSummaryGrid"></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="uuid-field" style="flex:1.2;margin-bottom:0">
+            <label>Lokasi Cas</label>
+            <select id="chgLogLoc" style="width:100%;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--card2);color:var(--text);font-family:inherit;font-size:12px">
+              <option value="Rumah">🏠 Rumah</option>
+              <option value="SPLU PLN">⚡ SPLU PLN</option>
+              <option value="SPKLU">🔌 SPKLU</option>
+              <option value="Kantor / Lainnya">🏢 Kantor / Lainnya</option>
+            </select>
+          </div>
+          <div class="uuid-field" style="flex:1;margin-bottom:0">
+            <label>Tarif (Rp/kWh)</label>
+            <input id="chgLogTarif" type="number" min="0" value="1447" style="font-family:inherit">
+          </div>
+        </div>
+        <div class="preset-row" style="margin-bottom:8px">
+          <button type="button" class="preset-btn" onclick="document.getElementById('chgLogTarif').value=1447">Rumah 1.447</button>
+          <button type="button" class="preset-btn" onclick="document.getElementById('chgLogTarif').value=2466">SPLU 2.466</button>
+          <button type="button" class="preset-btn" onclick="document.getElementById('chgLogTarif').value=0">Gratis</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <div class="uuid-field" style="flex:1;margin-bottom:0"><label>SOC Awal %</label><input id="chgLogStart" type="number" min="0" max="99" value="25" style="font-family:inherit"></div>
+          <div class="uuid-field" style="flex:1;margin-bottom:0"><label>SOC Akhir %</label><input id="chgLogEnd" type="number" min="1" max="100" value="95" style="font-family:inherit"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button class="modal-btn primary" style="flex:1.3" onclick="saveChargeLogEntry()">💾 Simpan Catatan Cas</button>
+          <button class="btn-std" style="flex:0.9" onclick="copyChargeLogsSummary()">📋 Salin Rekap</button>
+        </div>
+        <div id="chgLogList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ KALKULATOR JARAK TEMPUH & ECO SPEED ══ -->
+<div class="np-sheet-bg" id="rangeCalcSheet" onclick="if(event.target===this)closeNpSheet('rangeCalcSheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title">🧭 Kalkulator Jarak &amp; Eco Speed</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('rangeCalcSheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div class="molis-stat-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-weight:700">SOC Baterai: <span id="rcSocLabel" style="color:var(--green)">80%</span></span>
+          <button type="button" class="btn-std-sm" onclick="useLiveSocForRangeCalc()">Ambil SOC Live</button>
+        </div>
+        <input id="rcSocSlider" type="range" min="10" max="100" value="80" oninput="recalcRangeEstimator()" style="width:100%">
+        <div id="rcCapSub" style="font-size:10px;color:var(--muted);margin-top:3px">Kapasitas baterai terpasang: —</div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;margin-bottom:5px">Kecepatan Jelajah:</div>
+      <div class="preset-row" id="rcSpeedRow" style="margin-bottom:8px">
+        <button type="button" class="preset-btn" data-spd="35" onclick="setRcSpeed(35,this)">35 km/j Eco</button>
+        <button type="button" class="preset-btn active" data-spd="45" onclick="setRcSpeed(45,this)">45 km/j Normal</button>
+        <button type="button" class="preset-btn" data-spd="60" onclick="setRcSpeed(60,this)">60 km/j Cepat</button>
+        <button type="button" class="preset-btn" data-spd="75" onclick="setRcSpeed(75,this)">75 km/j Sport</button>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1">
+          <div style="font-size:10.5px;color:var(--muted);margin-bottom:4px">Beban / Penumpang</div>
+          <div class="preset-row" id="rcLoadRow" style="margin-bottom:0">
+            <button type="button" class="preset-btn active" data-mul="1" onclick="setRcLoad(1,this)">Sendiri</button>
+            <button type="button" class="preset-btn" data-mul="1.16" onclick="setRcLoad(1.16,this)">Bonceng</button>
+          </div>
+        </div>
+        <div style="flex:1.2">
+          <div style="font-size:10.5px;color:var(--muted);margin-bottom:4px">Kondisi Rute</div>
+          <div class="preset-row" id="rcTerrainRow" style="margin-bottom:0">
+            <button type="button" class="preset-btn active" data-mul="1" onclick="setRcTerrain(1,this)">Datar</button>
+            <button type="button" class="preset-btn" data-mul="1.14" onclick="setRcTerrain(1.14,this)">Kota</button>
+            <button type="button" class="preset-btn" data-mul="1.32" onclick="setRcTerrain(1.32,this)">Nanjak</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chg-kpi-grid" id="rcResultGrid"></div>
+
+      <div class="molis-stat-card" style="margin-bottom:0">
+        <div style="font-size:11px;font-weight:700;margin-bottom:4px">Perbandingan Kecepatan vs Jarak Tempuh</div>
+        <table class="rc-table" id="rcCompareTable"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ANALITIK DEVELOPER (AKSES KHUSUS — TERSEMBUNYI DARI USER BIASA) ══ -->
+<div class="np-sheet-bg" id="devStatsSheet" onclick="if(event.target===this)closeNpSheet('devStatsSheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title">🔐 Analitik Developer</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('devStatsSheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div id="devStatsLockView">
+        <div class="molis-stat-card" style="margin-bottom:10px">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:4px">Verifikasi Pemilik Repositori</div>
+          <div style="font-size:11px;color:var(--muted);line-height:1.5">
+            Halaman ini hanya untuk pemilik repositori <b>armadit-eng/gesits-dashboard</b>. Token tidak pernah disimpan dalam kode aplikasi dan diverifikasi langsung ke server GitHub.
+          </div>
+        </div>
+        <div class="uuid-field">
+          <label>GitHub Personal Access Token (PAT)</label>
+          <input id="devGhTokenInput" type="password" autocomplete="off" placeholder="github_pat_... atau ghp_..." style="font-family:monospace;font-size:12px">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin-bottom:10px;cursor:pointer">
+          <input id="devGhRememberChk" type="checkbox" checked style="width:16px;height:16px">
+          <span>Simpan token terotorisasi di perangkat ini saja</span>
+        </label>
+        <div id="devAuthErrBox" style="display:none;font-size:11.5px;color:var(--danger);background:rgba(255,82,82,.1);border:1px solid rgba(255,82,82,.35);border-radius:10px;padding:8px 10px;margin-bottom:10px"></div>
+        <button id="devVerifyBtn" class="modal-btn primary" style="width:100%" onclick="verifyDevGithubAccess()">🔓 Verifikasi &amp; Buka Analitik</button>
+      </div>
+
+      <div id="devStatsContentView" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 11px;margin-bottom:10px">
+          <div style="font-size:11px;min-width:0">
+            <div style="font-weight:700;color:var(--green)" id="devVerifiedUserLbl">✓ Terverifikasi</div>
+            <div style="color:var(--muted);font-size:10px" id="devLastRefreshLbl">Memuat data…</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button type="button" class="btn-std-sm" onclick="refreshAllDevStats()">↻ Muat Ulang</button>
+            <button type="button" class="btn-std-sm text-danger" onclick="lockDevAnalytics()">🔒 Kunci</button>
+          </div>
+        </div>
+
+        <div class="chg-tab-row">
+          <button type="button" class="chg-tab-btn active" id="devTabBtnApk" onclick="switchDevStatsTab('apk')">📲 Unduhan APK</button>
+          <button type="button" class="chg-tab-btn" id="devTabBtnWeb" onclick="switchDevStatsTab('web')">🌐 Pages (gesits.pages.dev)</button>
+        </div>
+
+        <div id="devTabApk">
+          <div class="chg-kpi-grid" id="devApkKpiGrid"></div>
+          <div class="molis-stat-card" style="margin-bottom:10px">
+            <div style="font-size:11px;font-weight:700;margin-bottom:6px">Rincian Unduhan per Rilis GitHub</div>
+            <div id="devApkReleaseList" style="font-size:11.5px;color:var(--muted)">Memuat daftar rilis…</div>
+          </div>
+          <div id="devRepoTrafficBox" style="font-size:10.5px;color:var(--muted)"></div>
+        </div>
+
+        <div id="devTabWeb" style="display:none">
+          <div class="chg-kpi-grid" id="devCfKpiGrid"></div>
+          <div class="molis-stat-card" style="margin-bottom:10px">
+            <div style="font-size:11px;font-weight:700;margin-bottom:6px">Trafik Harian (Cloudflare Web Analytics)</div>
+            <div id="devCfDailyList" style="font-size:11.5px;color:var(--muted)">Belum dikonfigurasi</div>
+          </div>
+
+          <div class="molis-stat-card" style="margin-bottom:8px">
+            <div style="font-size:11.5px;font-weight:700;margin-bottom:6px">Kredensial Cloudflare (Opsional, Lokal di HP Anda)</div>
+            <div class="uuid-field">
+              <label>Cloudflare Account ID</label>
+              <input id="devCfAccountInput" type="text" autocomplete="off" placeholder="32 karakter hex dari URL dashboard Cloudflare" style="font-family:monospace;font-size:11px">
+            </div>
+            <div class="uuid-field">
+              <label>Cloudflare API Token (Account Analytics: Read)</label>
+              <input id="devCfTokenInput" type="password" autocomplete="off" placeholder="Token read-only Account Analytics" style="font-family:monospace;font-size:11px">
+            </div>
+            <div class="uuid-field" style="margin-bottom:8px">
+              <label>Site Tag Web Analytics (Opsional, kosong = semua site)</label>
+              <input id="devCfSiteTagInput" type="text" autocomplete="off" placeholder="Opsional untuk filter khusus gesits.pages.dev" style="font-family:monospace;font-size:11px">
+            </div>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="modal-btn primary" style="flex:1.2" onclick="saveAndFetchCfAnalytics()">💾 Simpan &amp; Muat Trafik</button>
+              <button type="button" class="btn-std" style="flex:1" onclick="openCloudflareDashboard()">📊 Buka Dashboard</button>
+            </div>
+          </div>
+          <div style="font-size:10px;color:var(--muted);line-height:1.45">
+            Tip: Di Cloudflare Dashboard → <b>Workers &amp; Pages → gesits → Metrics</b>, aktifkan <b>Web Analytics</b> 1 klik untuk otomatis merekam kunjungan <b>gesits.pages.dev</b> tanpa ubah kode APK.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══ CATAT NAMA (catatan lapangan OSM + SPKLU buatan user) ══ -->
 <div class="np-sheet-bg" id="catatSheet" onclick="if(event.target===this)closeNpSheet('catatSheet')">
   <div class="np-sheet">
@@ -4476,6 +4727,11 @@ function motoImgFallback(img){
         <div><div class="akun-card-title">Garasi Virtual</div><div class="akun-card-sub" id="garasiMenuSub">Pilih livery &amp; kelola tampilan motor</div></div>
         <div class="akun-card-chev">›</div>
       </div>
+      <div class="akun-card" onclick="openChargeMonitorModal()">
+        <div class="akun-card-ico" style="background:rgba(0,229,255,.14);color:#00e5ff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <div><div class="akun-card-title">Monitor &amp; Log Cas</div><div class="akun-card-sub">Alarm target SOC &amp; riwayat biaya</div></div>
+        <div class="akun-card-chev">›</div>
+      </div>
     </div>
   </div>
 
@@ -4492,6 +4748,11 @@ function motoImgFallback(img){
       <div class="akun-card" onclick="switchTab('navigasi',document.querySelectorAll('.tab')[2]);openTripPlanner()">
         <div class="akun-card-ico" style="background:rgba(124,77,255,.16);color:#7c4dff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg></div>
         <div><div class="akun-card-title">Trip Planner</div><div class="akun-card-sub">Rencanakan perjalanan multi-tujuan</div></div>
+        <div class="akun-card-chev">›</div>
+      </div>
+      <div class="akun-card" onclick="openRangeCalcModal()">
+        <div class="akun-card-ico" style="background:rgba(105,240,174,.14);color:#69f0ae"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg></div>
+        <div><div class="akun-card-title">Kalkulator Jarak</div><div class="akun-card-sub">Estimasi jarak tempuh &amp; eco speed</div></div>
         <div class="akun-card-chev">›</div>
       </div>
     </div>
@@ -6336,6 +6597,402 @@ function refreshAboutAppModalIfOpen(forcePopulate){
       btnEl.textContent = pwaReady ? '⬇️ Update Sekarang' : '📲 Download APK Terbaru';
       btnEl.onclick = ()=>{ closeModal('aboutAppModal'); if(pwaReady) showPwaUpdatePrompt(); else downloadApk(); };
     }
+  }
+}
+
+// ── ANALITIK DEVELOPER (AKSES KHUSUS 7-TAP + VERIFIKASI GITHUB PAT) ──
+const DEV_GH_TOKEN_KEY = 'gesits_dev_gh_token_v1';
+const DEV_CF_CFG_KEY = 'gesits_dev_cf_cfg_v1';
+let _aboutVerTapCount = 0;
+let _aboutVerTapTimer = null;
+let _devVerifiedLogin = '';
+
+function onAboutVersionTap(){
+  _aboutVerTapCount++;
+  clearTimeout(_aboutVerTapTimer);
+  _aboutVerTapTimer = setTimeout(()=>{ _aboutVerTapCount = 0; }, 2200);
+  if(_aboutVerTapCount >= 5 && _aboutVerTapCount < 7){
+    showToast(`Ketuk ${7 - _aboutVerTapCount}x lagi untuk akses Developer`);
+  }
+  if(_aboutVerTapCount >= 7){
+    _aboutVerTapCount = 0;
+    clearTimeout(_aboutVerTapTimer);
+    closeModal('aboutAppModal');
+    openDevStatsSheet();
+  }
+}
+
+function _getDevGhToken(){
+  try{
+    return sessionStorage.getItem(DEV_GH_TOKEN_KEY) || localStorage.getItem(DEV_GH_TOKEN_KEY) || '';
+  }catch(e){ return ''; }
+}
+function _setDevGhToken(token, remember){
+  try{
+    sessionStorage.removeItem(DEV_GH_TOKEN_KEY);
+    localStorage.removeItem(DEV_GH_TOKEN_KEY);
+    if(!token) return;
+    if(remember) localStorage.setItem(DEV_GH_TOKEN_KEY, token);
+    else sessionStorage.setItem(DEV_GH_TOKEN_KEY, token);
+  }catch(e){}
+}
+function _getDevCfCfg(){
+  try{
+    const raw = localStorage.getItem(DEV_CF_CFG_KEY) || sessionStorage.getItem(DEV_CF_CFG_KEY);
+    return raw ? JSON.parse(raw) : { accountId:'', token:'', siteTag:'' };
+  }catch(e){ return { accountId:'', token:'', siteTag:'' }; }
+}
+
+function openDevStatsSheet(){
+  openNpSheet('devStatsSheet');
+  const errBox = document.getElementById('devAuthErrBox');
+  if(errBox){ errBox.style.display = 'none'; errBox.textContent = ''; }
+  const tok = _getDevGhToken();
+  const lockView = document.getElementById('devStatsLockView');
+  const contentView = document.getElementById('devStatsContentView');
+  if(tok){
+    if(lockView) lockView.style.display = 'none';
+    if(contentView) contentView.style.display = '';
+    _populateCfInputs();
+    refreshAllDevStats();
+  } else {
+    if(lockView) lockView.style.display = '';
+    if(contentView) contentView.style.display = 'none';
+  }
+}
+
+function lockDevAnalytics(){
+  _setDevGhToken('', false);
+  _devVerifiedLogin = '';
+  const tokIn = document.getElementById('devGhTokenInput');
+  if(tokIn) tokIn.value = '';
+  const lockView = document.getElementById('devStatsLockView');
+  const contentView = document.getElementById('devStatsContentView');
+  if(lockView) lockView.style.display = '';
+  if(contentView) contentView.style.display = 'none';
+  showToast('🔒 Akses Analitik Developer dikunci');
+}
+
+function switchDevStatsTab(tab){
+  const a = document.getElementById('devTabApk'), w = document.getElementById('devTabWeb');
+  const ba = document.getElementById('devTabBtnApk'), bw = document.getElementById('devTabBtnWeb');
+  if(a) a.style.display = tab === 'apk' ? '' : 'none';
+  if(w) w.style.display = tab === 'web' ? '' : 'none';
+  if(ba) ba.classList.toggle('active', tab === 'apk');
+  if(bw) bw.classList.toggle('active', tab === 'web');
+}
+
+async function _verifyGithubOwnerToken(token){
+  const headers = {
+    'Accept': 'application/vnd.github+json',
+    'Authorization': `Bearer ${token}`
+  };
+  const [uRes, rRes] = await Promise.all([
+    fetch('https://api.github.com/user', { headers, cache: 'no-store' }),
+    fetch(`https://api.github.com/repos/${GITHUB_REPO}`, { headers, cache: 'no-store' })
+  ]);
+  if(uRes.status === 401 || rRes.status === 401){
+    throw new Error('Token GitHub tidak valid atau sudah kedaluwarsa.');
+  }
+  if(!uRes.ok || !rRes.ok){
+    throw new Error(`Gagal verifikasi GitHub (HTTP ${!uRes.ok ? uRes.status : rRes.status}).`);
+  }
+  const userJson = await uRes.json();
+  const repoJson = await rRes.json();
+  const login = (userJson && userJson.login) ? String(userJson.login) : '';
+  const expectedOwner = GITHUB_REPO.split('/')[0].toLowerCase();
+  const perms = (repoJson && repoJson.permissions) || {};
+  const isOwnerOrCollab = (login.toLowerCase() === expectedOwner) || !!perms.push || !!perms.admin || !!perms.maintain;
+  if(!isOwnerOrCollab){
+    throw new Error(`Akses ditolak: akun @${login || 'unknown'} bukan pemilik/kolaborator ${GITHUB_REPO}.`);
+  }
+  return login;
+}
+
+async function verifyDevGithubAccess(){
+  const input = document.getElementById('devGhTokenInput');
+  const rem = document.getElementById('devGhRememberChk');
+  const errBox = document.getElementById('devAuthErrBox');
+  const btn = document.getElementById('devVerifyBtn');
+  const token = (input?.value || '').trim();
+  if(errBox){ errBox.style.display = 'none'; errBox.textContent = ''; }
+  if(!token){
+    if(errBox){ errBox.textContent = 'Masukkan GitHub Personal Access Token terlebih dahulu.'; errBox.style.display = ''; }
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Memverifikasi…'; }
+  try{
+    const login = await _verifyGithubOwnerToken(token);
+    _devVerifiedLogin = login;
+    _setDevGhToken(token, !!(rem && rem.checked));
+    const lockView = document.getElementById('devStatsLockView');
+    const contentView = document.getElementById('devStatsContentView');
+    if(lockView) lockView.style.display = 'none';
+    if(contentView) contentView.style.display = '';
+    _populateCfInputs();
+    await refreshAllDevStats();
+  }catch(e){
+    if(errBox){
+      errBox.textContent = '⛔ ' + (e.message || 'Gagal verifikasi akses.');
+      errBox.style.display = '';
+    }
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '🔓 Verifikasi & Buka Analitik'; }
+  }
+}
+
+async function refreshAllDevStats(){
+  const tok = _getDevGhToken();
+  if(!tok) return;
+  const userLbl = document.getElementById('devVerifiedUserLbl');
+  const timeLbl = document.getElementById('devLastRefreshLbl');
+  try{
+    if(!_devVerifiedLogin){
+      _devVerifiedLogin = await _verifyGithubOwnerToken(tok);
+    }
+    if(userLbl) userLbl.textContent = `✓ Terverifikasi sebagai @${_devVerifiedLogin}`;
+  }catch(e){
+    lockDevAnalytics();
+    const errBox = document.getElementById('devAuthErrBox');
+    if(errBox){ errBox.textContent = '⛔ ' + (e.message || 'Sesi token tidak valid.'); errBox.style.display = ''; }
+    return;
+  }
+  await Promise.allSettled([
+    _loadGithubReleaseStats(tok),
+    _loadCloudflareWebStats()
+  ]);
+  if(timeLbl){
+    timeLbl.textContent = 'Diperbarui: ' + new Date().toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  }
+}
+
+async function _loadGithubReleaseStats(token){
+  const kpiEl = document.getElementById('devApkKpiGrid');
+  const listEl = document.getElementById('devApkReleaseList');
+  const trafEl = document.getElementById('devRepoTrafficBox');
+  const headers = {
+    'Accept': 'application/vnd.github+json',
+    'Authorization': `Bearer ${token}`
+  };
+  try{
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=20`, { headers, cache: 'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const releases = await res.json();
+    let totalDl = 0;
+    let latestDl = 0;
+    let latestTag = '—';
+    const rows = [];
+    (Array.isArray(releases) ? releases : []).forEach((r, idx)=>{
+      const assets = Array.isArray(r.assets) ? r.assets : [];
+      const apkAssets = assets.filter(a => (a.name || '').toLowerCase().endsWith('.apk'));
+      const targetAssets = apkAssets.length ? apkAssets : assets;
+      const relDl = targetAssets.reduce((s, a) => s + (Number(a.download_count) || 0), 0);
+      totalDl += relDl;
+      if(idx === 0 && !r.draft){
+        latestDl = relDl;
+        latestTag = r.tag_name || r.name || '—';
+      }
+      const dt = r.published_at ? new Date(r.published_at).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' }) : 'Draft';
+      const assetMeta = targetAssets.map(a => `${escapeHtml(a.name)} (${((a.size||0)/1048576).toFixed(1)} MB)`).join(', ') || 'Tidak ada file APK';
+      const badge = r.prerelease ? ' <span style="color:var(--warning);font-size:10px">[Pre]</span>' : (r.draft ? ' <span style="color:var(--muted);font-size:10px">[Draft]</span>' : '');
+      rows.push(`<div class="np-list-item">
+        <div style="flex:1;min-width:0">
+          <div class="np-list-name">${escapeHtml(r.tag_name || r.name || 'Rilis')}${badge}</div>
+          <div class="np-list-sub">${dt} · ${assetMeta}</div>
+        </div>
+        <div style="font-weight:800;font-size:13px;color:var(--green);flex-shrink:0">${relDl.toLocaleString('id-ID')}x</div>
+      </div>`);
+    });
+
+    let viewsTxt = '—', viewsSub = 'Butuh izin push/admin';
+    let clonesTxt = '—';
+    try{
+      const [vRes, cRes] = await Promise.all([
+        fetch(`https://api.github.com/repos/${GITHUB_REPO}/traffic/views`, { headers, cache: 'no-store' }),
+        fetch(`https://api.github.com/repos/${GITHUB_REPO}/traffic/clones`, { headers, cache: 'no-store' })
+      ]);
+      if(vRes.ok){
+        const vj = await vRes.json();
+        viewsTxt = `${Number(vj.uniques||0).toLocaleString('id-ID')} unik`;
+        viewsSub = `${Number(vj.count||0).toLocaleString('id-ID')} total view (14h)`;
+      }
+      if(cRes.ok){
+        const cj = await cRes.json();
+        clonesTxt = `${Number(cj.uniques||0).toLocaleString('id-ID')} unik (${Number(cj.count||0)}x)`;
+      }
+    }catch(_){}
+
+    if(kpiEl){
+      kpiEl.innerHTML = `
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Total Unduhan APK</div><div class="chg-kpi-val" style="color:var(--green)">${totalDl.toLocaleString('id-ID')}x</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Rilis Terbaru (${escapeHtml(latestTag)})</div><div class="chg-kpi-val">${latestDl.toLocaleString('id-ID')}x</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Kunjungan Repo (14h)</div><div class="chg-kpi-val" style="font-size:13px">${viewsTxt}</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Clone Repo (14h)</div><div class="chg-kpi-val" style="font-size:13px">${clonesTxt}</div></div>`;
+    }
+    if(listEl){
+      listEl.innerHTML = rows.length ? rows.join('') : '<div style="padding:8px 0">Belum ada rilis APK di GitHub Releases.</div>';
+    }
+    if(trafEl){
+      trafEl.textContent = `Sumber: api.github.com/repos/${GITHUB_REPO} · ${viewsSub}`;
+    }
+  }catch(e){
+    if(listEl) listEl.innerHTML = `<span style="color:var(--danger)">Gagal memuat rilis: ${escapeHtml(e.message||'Error')}</span>`;
+  }
+}
+
+function _populateCfInputs(){
+  const cfg = _getDevCfCfg();
+  const aEl = document.getElementById('devCfAccountInput');
+  const tEl = document.getElementById('devCfTokenInput');
+  const sEl = document.getElementById('devCfSiteTagInput');
+  if(aEl && cfg.accountId) aEl.value = cfg.accountId;
+  if(tEl && cfg.token) tEl.value = cfg.token;
+  if(sEl && cfg.siteTag) sEl.value = cfg.siteTag;
+}
+
+function saveAndFetchCfAnalytics(){
+  const accountId = (document.getElementById('devCfAccountInput')?.value || '').trim();
+  const token = (document.getElementById('devCfTokenInput')?.value || '').trim();
+  const siteTag = (document.getElementById('devCfSiteTagInput')?.value || '').trim();
+  const cfg = { accountId, token, siteTag };
+  try{
+    localStorage.setItem(DEV_CF_CFG_KEY, JSON.stringify(cfg));
+  }catch(e){}
+  _loadCloudflareWebStats();
+}
+
+function openCloudflareDashboard(){
+  const url = 'https://dash.cloudflare.com/';
+  if(IS_NATIVE_ANDROID && typeof Android !== 'undefined' && typeof Android.openUrl === 'function'){
+    Android.openUrl(url);
+  } else {
+    window.open(url, '_blank');
+  }
+}
+
+function _queryCfGraphqlNative(cfToken, payloadObj){
+  return new Promise((resolve, reject)=>{
+    const reqId = 'cf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    const timer = setTimeout(()=>{
+      delete _molisNativeFetchPending[reqId];
+      reject(new Error('Timeout query Cloudflare'));
+    }, 15000);
+    _molisNativeFetchPending[reqId] = async (res)=>{
+      clearTimeout(timer);
+      try{
+        const textResp = await fetch(`https://appassets.androidplatform.net/molis-fetch/${encodeURIComponent(reqId)}`, { cache:'no-store' });
+        const raw = await textResp.text();
+        const parsed = raw ? JSON.parse(raw) : {};
+        if(!res.ok){
+          const msg = (parsed.errors && parsed.errors[0] && parsed.errors[0].message) || res.error || (`HTTP ${res.status}`);
+          return reject(new Error(msg));
+        }
+        resolve(parsed);
+      }catch(err){
+        reject(err);
+      }
+    };
+    Android.postCloudflareGraphql(reqId, cfToken, JSON.stringify(payloadObj));
+  });
+}
+
+async function _loadCloudflareWebStats(){
+  const cfg = _getDevCfCfg();
+  const kpiEl = document.getElementById('devCfKpiGrid');
+  const listEl = document.getElementById('devCfDailyList');
+  if(!cfg.accountId || !cfg.token){
+    if(kpiEl){
+      kpiEl.innerHTML = `
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Kunjungan (7 Hari)</div><div class="chg-kpi-val">—</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Pageviews (7 Hari)</div><div class="chg-kpi-val">—</div></div>`;
+    }
+    if(listEl) listEl.innerHTML = 'Masukkan <b>Account ID</b> &amp; <b>API Token Cloudflare</b> di bawah untuk menarik statistik langsung ke sini, atau ketuk <b>Buka Dashboard</b>.';
+    return;
+  }
+
+  if(listEl) listEl.innerHTML = '⏳ Mengambil statistik Cloudflare Web Analytics…';
+  const now = new Date();
+  const d7 = new Date(now.getTime() - 7 * 86400000);
+  const d30 = new Date(now.getTime() - 30 * 86400000);
+  const siteFilter = cfg.siteTag ? `, siteTag: "${cfg.siteTag.replace(/"/g, '')}"` : '';
+  const query = `
+    query($accountTag: string!, $since30: Time!, $since7: Time!, $until: Time!) {
+      viewer {
+        accounts(filter: { accountTag: $accountTag }) {
+          t30: rumPageloadEventsAdaptiveGroups(limit: 1, filter: { datetime_geq: $since30, datetime_leq: $until${siteFilter} }) {
+            sum { visits }
+            count
+          }
+          t7: rumPageloadEventsAdaptiveGroups(limit: 1, filter: { datetime_geq: $since7, datetime_leq: $until${siteFilter} }) {
+            sum { visits }
+            count
+          }
+          daily: rumPageloadEventsAdaptiveGroups(limit: 14, filter: { datetime_geq: $since7, datetime_leq: $until${siteFilter} }, orderBy: [date_DESC]) {
+            dimensions { date }
+            sum { visits }
+            count
+          }
+        }
+      }
+    }`;
+  const bodyObj = {
+    query,
+    variables: {
+      accountTag: cfg.accountId,
+      since30: d30.toISOString(),
+      since7: d7.toISOString(),
+      until: now.toISOString()
+    }
+  };
+
+  try{
+    let data;
+    if(IS_NATIVE_ANDROID && typeof Android !== 'undefined' && typeof Android.postCloudflareGraphql === 'function'){
+      data = await _queryCfGraphqlNative(cfg.token, bodyObj);
+    } else {
+      const r = await fetch('https://api.cloudflare.com/client/v4/graphql', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cfg.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyObj)
+      });
+      data = await r.json();
+      if(!r.ok) throw new Error((data?.errors?.[0]?.message) || `HTTP ${r.status}`);
+    }
+    if(data.errors && data.errors.length){
+      throw new Error(data.errors[0].message || 'Cloudflare GraphQL error');
+    }
+    const acc = data?.data?.viewer?.accounts?.[0];
+    if(!acc) throw new Error('Account ID tidak ditemukan atau token tidak punya izin Account Analytics: Read');
+
+    const v30 = Number(acc.t30?.[0]?.sum?.visits || 0);
+    const p30 = Number(acc.t30?.[0]?.count || 0);
+    const v7 = Number(acc.t7?.[0]?.sum?.visits || 0);
+    const p7 = Number(acc.t7?.[0]?.count || 0);
+
+    if(kpiEl){
+      kpiEl.innerHTML = `
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Kunjungan (7 Hari)</div><div class="chg-kpi-val" style="color:var(--green)">${v7.toLocaleString('id-ID')}</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Pageviews (7 Hari)</div><div class="chg-kpi-val">${p7.toLocaleString('id-ID')}</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Kunjungan (30 Hari)</div><div class="chg-kpi-val">${v30.toLocaleString('id-ID')}</div></div>
+        <div class="chg-kpi"><div class="chg-kpi-lbl">Pageviews (30 Hari)</div><div class="chg-kpi-val">${p30.toLocaleString('id-ID')}</div></div>`;
+    }
+    const daily = Array.isArray(acc.daily) ? acc.daily : [];
+    if(listEl){
+      if(!daily.length){
+        listEl.innerHTML = 'Belum ada event Web Analytics. Pastikan fitur <b>Web Analytics</b> sudah diaktifkan di dashboard Pages Cloudflare.';
+      } else {
+        listEl.innerHTML = daily.map(d => `<div class="np-list-item">
+          <div class="np-list-name">${escapeHtml(d.dimensions?.date || '—')}</div>
+          <div style="font-size:11.5px;color:var(--text);font-weight:700">${Number(d.sum?.visits||0).toLocaleString('id-ID')} kunjungan · ${Number(d.count||0).toLocaleString('id-ID')} views</div>
+        </div>`).join('');
+      }
+    }
+  }catch(e){
+    const msg = e.message || 'Gagal memuat';
+    const corsHint = (!IS_NATIVE_ANDROID && /failed to fetch|cors|network/i.test(msg))
+      ? ' (Browser PWA memblokir CORS API Cloudflare — buka dari aplikasi Android atau klik Buka Dashboard)'
+      : '';
+    if(listEl) listEl.innerHTML = `<span style="color:var(--danger)">${escapeHtml(msg + corsHint)}</span>`;
   }
 }
 
@@ -18554,6 +19211,376 @@ function toggleSosHazard(on){
   }
 }
 
+// ── MONITOR CAS, ALARM TARGET SOC & RIWAYAT BIAYA PENGISIAN ──
+const CHARGE_ALARM_KEY = 'gesits_charge_alarm_v1';
+const CHARGE_LOGS_KEY = 'gesits_charge_logs_v1';
+let _chargeAlarmTimer = null;
+
+function _getChargeAlarmState(){
+  try{ return Object.assign({ enabled:false, targetSoc:90, fired:false }, JSON.parse(localStorage.getItem(CHARGE_ALARM_KEY)||'{}')); }
+  catch(e){ return { enabled:false, targetSoc:90, fired:false }; }
+}
+function _saveChargeAlarmState(st){
+  try{ localStorage.setItem(CHARGE_ALARM_KEY, JSON.stringify(st)); }catch(e){}
+}
+function _getChargeLogs(){
+  try{ const arr = JSON.parse(localStorage.getItem(CHARGE_LOGS_KEY)||'[]'); return Array.isArray(arr) ? arr : []; }
+  catch(e){ return []; }
+}
+function _saveChargeLogs(arr){
+  try{ localStorage.setItem(CHARGE_LOGS_KEY, JSON.stringify(arr.slice(0, 100))); }catch(e){}
+}
+function _playChargeTargetChime(){
+  try{
+    if(typeof Android !== 'undefined' && typeof Android.playChime === 'function'){
+      Android.playChime();
+      return;
+    }
+  }catch(e){}
+  try{
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if(!Ctx) return;
+    const ctx = new Ctx();
+    [659.25, 783.99, 1046.5].forEach((freq, i)=>{
+      const osc = ctx.createOscillator(), gain = ctx.createGain();
+      const t = ctx.currentTime + i * 0.16;
+      osc.type = 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(0.22, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t); osc.stop(t + 0.3);
+    });
+    setTimeout(()=>{ try{ ctx.close(); }catch(_){} }, 900);
+  }catch(e){}
+}
+
+function _startChargeAlarmWatcher(){
+  if(_chargeAlarmTimer) return;
+  _chargeAlarmTimer = setInterval(()=>{
+    const st = _getChargeAlarmState();
+    if(!st.enabled){
+      clearInterval(_chargeAlarmTimer); _chargeAlarmTimer = null;
+      return;
+    }
+    const soc = getEffSoc();
+    if(soc != null && soc >= st.targetSoc && !st.fired){
+      st.fired = true;
+      _saveChargeAlarmState(st);
+      _playChargeTargetChime();
+      showToast(`🔋 Target cas ${st.targetSoc}% tercapai! (Kini ${Math.round(soc)}%) — cabut charger untuk menjaga keawetan baterai.`);
+      const sub = document.getElementById('pintasanChargeSub');
+      if(sub){ sub.textContent = `Target ${st.targetSoc}% tercapai!`; sub.style.color = 'var(--green)'; }
+    }
+  }, 5000);
+}
+
+function toggleChargeTargetAlarm(on){
+  const target = Math.max(20, Math.min(100, parseInt(document.getElementById('chgTargetSocInput')?.value||'90', 10) || 90));
+  const st = { enabled: !!on, targetSoc: target, fired: false };
+  _saveChargeAlarmState(st);
+  const sub = document.getElementById('pintasanChargeSub');
+  if(on){
+    _startChargeAlarmWatcher();
+    showToast(`🔔 Alarm aktif: akan berbunyi saat SOC mencapai ${target}%`);
+    if(sub){ sub.textContent = `Alarm aktif → target ${target}%`; sub.style.color = '#00e5ff'; }
+  } else {
+    showToast('🔕 Alarm target pengisian dimatikan');
+    if(sub){ sub.textContent = 'Alarm target & biaya listrik'; sub.style.color = 'var(--muted)'; }
+  }
+}
+
+function openChargeMonitorModal(){
+  openNpSheet('chargeMonitorSheet');
+  const soc = getEffSoc(), vbat = getEffVbat();
+  const ibms = (typeof bmsData !== 'undefined' && bmsData.connected && Number.isFinite(Number(bmsData.ipack)))
+    ? Number(bmsData.ipack)
+    : (typeof motoData !== 'undefined' && isConnected && Number.isFinite(Number(motoData.ibat)) ? Number(motoData.ibat) : null);
+  const liveW = (vbat && ibms != null) ? Math.abs(vbat * ibms) : null;
+
+  const liveBox = document.getElementById('chgLiveBox');
+  if(liveBox){
+    const socStr = soc != null ? `${Math.round(soc)}%` : 'Offline (input manual)';
+    const vStr = (vbat && vbat > 1) ? `${vbat.toFixed(1)} V` : '—';
+    const wStr = liveW != null ? `${Math.round(liveW)} W (${ibms.toFixed(1)} A)` : '—';
+    liveBox.innerHTML = `<div style="font-weight:700;margin-bottom:3px">🔋 Status Baterai Saat Ini</div>
+      <div>SOC: <b>${socStr}</b> · Tegangan: <b>${vStr}</b> · Daya terdeteksi: <b>${wStr}</b></div>`;
+  }
+  const curInput = document.getElementById('chgCurSocInput');
+  if(curInput && soc != null) curInput.value = Math.round(soc);
+  const st = _getChargeAlarmState();
+  const tgtInput = document.getElementById('chgTargetSocInput');
+  if(tgtInput && st.targetSoc) tgtInput.value = st.targetSoc;
+  const chk = document.getElementById('chgAlarmChk');
+  if(chk) chk.checked = !!st.enabled;
+  const tarif = parseFloat(localStorage.getItem('tarif_kwh')) || ELECTRICITY_TARIFF_IDR || 1447;
+  const tarifIn = document.getElementById('chgLogTarif');
+  if(tarifIn) tarifIn.value = Math.round(tarif);
+
+  recalcChargeMonitor();
+  renderChargeLogs();
+}
+
+function switchChargeTab(tab){
+  const m = document.getElementById('chgTabMonitor'), l = document.getElementById('chgTabLog');
+  const bm = document.getElementById('chgTabBtnMonitor'), bl = document.getElementById('chgTabBtnLog');
+  if(m) m.style.display = tab === 'monitor' ? '' : 'none';
+  if(l) l.style.display = tab === 'log' ? '' : 'none';
+  if(bm) bm.classList.toggle('active', tab === 'monitor');
+  if(bl) bl.classList.toggle('active', tab === 'log');
+  if(tab === 'log') renderChargeLogs();
+}
+
+function setChgTargetPreset(v, btn){
+  document.querySelectorAll('#chgTargetPresetRow .preset-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  const el = document.getElementById('chgTargetSocInput');
+  if(el) el.value = v;
+  recalcChargeMonitor();
+}
+
+function setChgPowerPreset(w, btn){
+  document.querySelectorAll('#chgPowerRow .preset-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  const el = document.getElementById('chgPowerInput');
+  if(el && w > 0) el.value = w;
+  recalcChargeMonitor();
+}
+
+function useLiveBmsPower(btn){
+  const vbat = getEffVbat();
+  const ibms = (typeof bmsData !== 'undefined' && bmsData.connected && Number.isFinite(Number(bmsData.ipack)))
+    ? Math.abs(Number(bmsData.ipack)) : null;
+  if(!vbat || !ibms || vbat * ibms < 30){
+    showToast('⚠️ Daya cas live BMS tidak terdeteksi (pastikan charger tercolok & BMS aktif)');
+    return;
+  }
+  setChgPowerPreset(Math.round(vbat * ibms), btn);
+}
+
+function recalcChargeMonitor(){
+  const cur = Math.max(0, Math.min(99, parseFloat(document.getElementById('chgCurSocInput')?.value || '35') || 0));
+  const rawTgt = Math.max(20, Math.min(100, parseFloat(document.getElementById('chgTargetSocInput')?.value || '90') || 90));
+  const tgt = Math.max(cur + 1, rawTgt);
+  const st = _getChargeAlarmState();
+  if(st.enabled && st.targetSoc !== Math.round(rawTgt)){
+    _saveChargeAlarmState({ enabled: true, targetSoc: Math.round(rawTgt), fired: false });
+    const sub = document.getElementById('pintasanChargeSub');
+    if(sub){ sub.textContent = `Alarm aktif → target ${Math.round(rawTgt)}%`; sub.style.color = '#00e5ff'; }
+  }
+  const pwrW = Math.max(50, parseFloat(document.getElementById('chgPowerInput')?.value || '850') || 850);
+  const fullWh = getFullCapacityWh();
+  const needBatteryWh = ((tgt - cur) / 100) * fullWh;
+  const wallWh = needBatteryWh / 0.90; // efisiensi charger ~90%
+  const wallKwh = wallWh / 1000;
+  const totalMin = Math.max(1, Math.round((wallWh / pwrW) * 60));
+  const hrs = Math.floor(totalMin / 60), mins = totalMin % 60;
+  const durStr = hrs > 0 ? `${hrs} j ${mins} m` : `${mins} mnt`;
+  const finishDt = new Date(Date.now() + totalMin * 60000);
+  const finishStr = finishDt.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' });
+  const tarif = parseFloat(localStorage.getItem('tarif_kwh')) || ELECTRICITY_TARIFF_IDR || 1447;
+  const estCost = Math.round(wallKwh * tarif);
+
+  const grid = document.getElementById('chgEstGrid');
+  if(grid){
+    grid.innerHTML = `
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Estimasi Lama Cas</div><div class="chg-kpi-val" style="color:var(--green)">${durStr}</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Perkiraan Selesai</div><div class="chg-kpi-val">${finishStr} WIB</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Energi Listrik (PLN)</div><div class="chg-kpi-val">${wallKwh.toFixed(2)} kWh</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Perkiraan Biaya</div><div class="chg-kpi-val">Rp ${estCost.toLocaleString('id-ID')}</div></div>`;
+  }
+}
+
+function prefillChargeLogFromMonitor(){
+  const cur = parseInt(document.getElementById('chgCurSocInput')?.value||'35', 10) || 0;
+  const tgt = parseInt(document.getElementById('chgTargetSocInput')?.value||'90', 10) || 90;
+  const sEl = document.getElementById('chgLogStart'), eEl = document.getElementById('chgLogEnd');
+  if(sEl) sEl.value = cur;
+  if(eEl) eEl.value = tgt;
+  switchChargeTab('log');
+}
+
+function saveChargeLogEntry(){
+  const loc = document.getElementById('chgLogLoc')?.value || 'Rumah';
+  const tarif = Math.max(0, parseFloat(document.getElementById('chgLogTarif')?.value || '0') || 0);
+  const socStart = Math.max(0, Math.min(99, parseInt(document.getElementById('chgLogStart')?.value || '0', 10) || 0));
+  const socEnd = Math.max(socStart + 1, Math.min(100, parseInt(document.getElementById('chgLogEnd')?.value || '100', 10) || 100));
+  const fullWh = getFullCapacityWh();
+  const kwh = (((socEnd - socStart) / 100) * fullWh) / 0.90 / 1000;
+  const cost = Math.round(kwh * tarif);
+  const logs = _getChargeLogs();
+  logs.unshift({
+    id: Date.now(),
+    ts: new Date().toISOString(),
+    loc, socStart, socEnd,
+    kwh: Number(kwh.toFixed(2)),
+    cost, tarif
+  });
+  _saveChargeLogs(logs);
+  renderChargeLogs();
+  showToast(`💾 Sesi cas dicatat (${kwh.toFixed(2)} kWh · Rp ${cost.toLocaleString('id-ID')})`);
+}
+
+function deleteChargeLogEntry(id){
+  const next = _getChargeLogs().filter(x => x.id !== id);
+  _saveChargeLogs(next);
+  renderChargeLogs();
+}
+
+function renderChargeLogs(){
+  const logs = _getChargeLogs();
+  const totalKwh = logs.reduce((s,x)=>s+(Number(x.kwh)||0), 0);
+  const totalCost = logs.reduce((s,x)=>s+(Number(x.cost)||0), 0);
+  const sumGrid = document.getElementById('chgLogSummaryGrid');
+  if(sumGrid){
+    sumGrid.innerHTML = `
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Total Sesi (${logs.length}x)</div><div class="chg-kpi-val">${totalKwh.toFixed(2)} kWh</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Total Biaya Cas</div><div class="chg-kpi-val" style="color:var(--green)">Rp ${totalCost.toLocaleString('id-ID')}</div></div>`;
+  }
+  const wrap = document.getElementById('chgLogList');
+  if(!wrap) return;
+  if(!logs.length){
+    wrap.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:11.5px;padding:16px 0">Belum ada catatan pengisian tersimpan.</div>';
+    return;
+  }
+  wrap.innerHTML = logs.slice(0, 20).map(item => {
+    const dt = new Date(item.ts).toLocaleString('id-ID', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+    return `<div class="np-list-item">
+      <div style="flex:1;min-width:0">
+        <div class="np-list-name">${escapeHtml(item.loc)} · ${item.socStart}% → ${item.socEnd}%</div>
+        <div class="np-list-sub">${dt} · ${Number(item.kwh).toFixed(2)} kWh · Rp ${Number(item.cost).toLocaleString('id-ID')}</div>
+      </div>
+      <button type="button" class="btn-std-sm text-danger" onclick="deleteChargeLogEntry(${item.id})" style="padding:4px 8px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function copyChargeLogsSummary(){
+  const logs = _getChargeLogs();
+  if(!logs.length){ showToast('Belum ada catatan pengisian untuk disalin'); return; }
+  const totalKwh = logs.reduce((s,x)=>s+(Number(x.kwh)||0), 0);
+  const totalCost = logs.reduce((s,x)=>s+(Number(x.cost)||0), 0);
+  const lines = [
+    `⚡ Rekap Pengisian GESITS (${logs.length} sesi)`,
+    `Total: ${totalKwh.toFixed(2)} kWh · Rp ${totalCost.toLocaleString('id-ID')}`,
+    ...logs.slice(0, 10).map(l => `- ${new Date(l.ts).toLocaleDateString('id-ID')} | ${l.loc} | ${l.socStart}%→${l.socEnd}% | ${l.kwh} kWh | Rp ${Number(l.cost).toLocaleString('id-ID')}`)
+  ];
+  const txt = lines.join('\n');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>showToast('📋 Rekap biaya cas disalin')).catch(()=>{
+      try{ if(typeof Android !== 'undefined' && Android.shareText){ Android.shareText(txt, 'Rekap Pengisian GESITS'); } }catch(e){}
+    });
+    return;
+  }
+  try{ if(typeof Android !== 'undefined' && Android.shareText){ Android.shareText(txt, 'Rekap Pengisian GESITS'); return; } }catch(e){}
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const st = _getChargeAlarmState();
+  if(st.enabled){
+    _startChargeAlarmWatcher();
+    const sub = document.getElementById('pintasanChargeSub');
+    if(sub){ sub.textContent = `Alarm aktif → target ${st.targetSoc}%`; sub.style.color = '#00e5ff'; }
+  }
+});
+
+// ── KALKULATOR JARAK TEMPUH & KECEPATAN OPTIMAL ──
+let _rcSpeed = 45;
+let _rcLoadMul = 1;
+let _rcTerrainMul = 1;
+
+function openRangeCalcModal(){
+  openNpSheet('rangeCalcSheet');
+  useLiveSocForRangeCalc(true);
+}
+
+function useLiveSocForRangeCalc(silent){
+  const soc = getEffSoc();
+  const sl = document.getElementById('rcSocSlider');
+  if(soc != null && sl){
+    sl.value = Math.max(10, Math.min(100, Math.round(soc)));
+  } else if(!silent){
+    showToast('ℹ️ Motor/BMS tidak terhubung, geser slider SOC manual');
+  }
+  recalcRangeEstimator();
+}
+
+function setRcSpeed(spd, btn){
+  _rcSpeed = spd;
+  document.querySelectorAll('#rcSpeedRow .preset-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  recalcRangeEstimator();
+}
+function setRcLoad(mul, btn){
+  _rcLoadMul = mul;
+  document.querySelectorAll('#rcLoadRow .preset-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  recalcRangeEstimator();
+}
+function setRcTerrain(mul, btn){
+  _rcTerrainMul = mul;
+  document.querySelectorAll('#rcTerrainRow .preset-btn').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  recalcRangeEstimator();
+}
+
+function _rcSpeedWhKm(spd, baseWhKm){
+  // Kurva konsumsi daya motor listrik: hambatan aerodinamika meningkat kuadratis terhadap kecepatan
+  const factors = { 35: 0.78, 45: 1.0, 60: 1.30, 75: 1.65 };
+  return baseWhKm * (factors[spd] || 1.0) * _rcLoadMul * _rcTerrainMul;
+}
+
+function recalcRangeEstimator(){
+  const soc = parseInt(document.getElementById('rcSocSlider')?.value || '80', 10) || 80;
+  const lbl = document.getElementById('rcSocLabel');
+  if(lbl) lbl.textContent = soc + '%';
+
+  const fullWh = getFullCapacityWh();
+  const baseWhKm = (typeof getTripEfficiencyData === 'function' && getTripEfficiencyData().available)
+    ? Math.max(18, Math.min(50, getTripEfficiencyData().whKm))
+    : (REF_WHKM || 28);
+  const capSub = document.getElementById('rcCapSub');
+  if(capSub) capSub.textContent = `Kapasitas aktif: ${(fullWh/1000).toFixed(2)} kWh (${Math.round(fullWh)} Wh) · Basis efisiensi: ${baseWhKm.toFixed(1)} Wh/km`;
+
+  const whPerKm = _rcSpeedWhKm(_rcSpeed, baseWhKm);
+  const availWhMax = (soc / 100) * fullWh;
+  const availWhSafe = Math.max(0, ((soc - 20) / 100) * fullWh);
+  const kmSafe = availWhSafe / whPerKm;
+  const kmMax = availWhMax / whPerKm;
+  const tarif = parseFloat(localStorage.getItem('tarif_kwh')) || ELECTRICITY_TARIFF_IDR || 1447;
+  const rpPerKm = (whPerKm / 1000) * tarif;
+
+  const grid = document.getElementById('rcResultGrid');
+  if(grid){
+    grid.innerHTML = `
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Jarak Aman (sisa 20%)</div><div class="chg-kpi-val" style="color:var(--green)">${kmSafe.toFixed(1)} km</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Jarak Maks (hingga 0%)</div><div class="chg-kpi-val">${kmMax.toFixed(1)} km</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Konsumsi @ ${_rcSpeed} km/j</div><div class="chg-kpi-val">${whPerKm.toFixed(1)} Wh/km</div></div>
+      <div class="chg-kpi"><div class="chg-kpi-lbl">Biaya Listrik / km</div><div class="chg-kpi-val">Rp ${Math.round(rpPerKm)}/km</div></div>`;
+  }
+
+  const tbl = document.getElementById('rcCompareTable');
+  if(tbl){
+    const rows = [
+      { spd: 35, tag: 'Eco' },
+      { spd: 45, tag: 'Normal' },
+      { spd: 60, tag: 'Cepat' },
+      { spd: 75, tag: 'Sport' }
+    ].map(r => {
+      const w = _rcSpeedWhKm(r.spd, baseWhKm);
+      const safe = availWhSafe / w;
+      const mx = availWhMax / w;
+      return `<tr class="${r.spd===_rcSpeed?'active-row':''}">
+        <td>${r.spd} km/j (${r.tag})</td>
+        <td>${w.toFixed(1)} Wh/km</td>
+        <td style="color:var(--green)">${safe.toFixed(1)} km</td>
+        <td>${mx.toFixed(1)} km</td>
+      </tr>`;
+    }).join('');
+    tbl.innerHTML = `<thead><tr><th>Kecepatan</th><th>Konsumsi</th><th>Aman (20%)</th><th>Maks</th></tr></thead><tbody>${rows}</tbody>`;
+  }
+}
+
 // ── SPKLU Terdekat (reuse fetchChargingStations / lastChargingResults) ──
 function renderSpkluSheetList(){
   const wrap = document.getElementById('spkluSheetList');
@@ -27289,7 +28316,7 @@ function renderFuelSavings(){
     <h3>ℹ️ Tentang Aplikasi</h3>
     <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:12px;line-height:1.6">
       <div><b>GESITS Dashboard &amp; Nav</b></div>
-      <div style="color:var(--muted)">Versi terpasang: <b id="aboutInstalledVer" style="color:var(--text)">—</b></div>
+      <div style="color:var(--muted);user-select:none;cursor:pointer" onclick="onAboutVersionTap()">Versi terpasang: <b id="aboutInstalledVer" style="color:var(--text)">—</b></div>
       <div style="color:var(--muted)">Status update: <span id="aboutUpdateStatus">—</span></div>
       <div style="color:var(--muted)">Versi Web / PWA: <span onclick="openPwaSiteUrl()" style="color:var(--green);font-weight:700;cursor:pointer;text-decoration:underline">gesits.pages.dev</span></div>
     </div>
