@@ -1105,6 +1105,22 @@ body.nav-fullscreen .nav-searchbar{left:56px}
 .molis-pill.warn{background:rgba(255,179,0,.15);color:#ffb300}
 .molis-pill.err{background:rgba(255,82,82,.15);color:var(--danger)}
 .charging-marker.molis{border-color:#00e5ff;color:#00e5ff;box-shadow:0 0 7px rgba(0,229,255,0.65)}
+.charging-marker.chk-ok{border-color:#00e676;color:#00e676;box-shadow:0 0 8px rgba(0,230,118,0.75)}
+.charging-marker.chk-busy{border-color:#ffb300;color:#ffb300;box-shadow:0 0 7px rgba(255,179,0,0.65)}
+.charging-marker.chk-broken{border-color:#ff5252;color:#ff5252;box-shadow:0 0 7px rgba(255,82,82,0.7);opacity:.82}
+.chk-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;margin-top:3px}
+.chk-pill.ok{background:rgba(0,230,118,.15);color:#00e676}
+.chk-pill.busy{background:rgba(255,179,0,.16);color:#ffb300}
+.chk-pill.perm{background:rgba(255,152,0,.16);color:#ffa726}
+.chk-pill.broken{background:rgba(255,82,82,.16);color:#ff5252}
+.spklu-popup-actions{display:flex;gap:6px;margin-top:8px}
+.spklu-popup-actions .spklu-route-btn{flex:1;margin-top:0}
+.spklu-checkin-btn{background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.sos-alert-box{background:rgba(255,82,82,.1);border:1px solid rgba(255,82,82,.35);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:11px;line-height:1.45}
+.sos-rescue-box{background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.28);border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:11px;line-height:1.45}
+.sos-hazard-overlay{display:none;position:fixed;inset:0;z-index:9999;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;color:#fff;font-weight:800;cursor:pointer}
+.sos-hazard-overlay.show{display:flex;animation:sosFlash 0.9s infinite}
+@keyframes sosFlash{0%,49%{background:#d50000}50%,100%{background:#ffab00;color:#111}}
 
 /* Destination panel */
 .dest-panel{
@@ -3068,6 +3084,11 @@ function motoImgFallback(img){
           <div><div class="pintasan-title">Update Aplikasi</div><div class="pintasan-sub" id="pintasanUpdateSub">Cek status…</div></div>
           <div class="pintasan-chev">›</div>
         </div>
+        <div class="pintasan-item" onclick="openEmergencyModal()">
+          <div class="pintasan-ico" style="background:rgba(255,82,82,.18);color:#ff5252"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+          <div><div class="pintasan-title">Darurat &amp; Touring</div><div class="pintasan-sub">Kirim SOS &amp; SPLU terdekat</div></div>
+          <div class="pintasan-chev">›</div>
+        </div>
         <div class="pintasan-item" onclick="showToast('Buka menu ⋮ di pojok kanan atas untuk Bantuan/FAQ (kalau tersedia), atau hubungi penjual GESITS kamu.')">
           <div class="pintasan-ico" style="background:rgba(120,144,156,.16);color:#90a4ae"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
           <div><div class="pintasan-title">Bantuan</div><div class="pintasan-sub">Pusat bantuan</div></div>
@@ -3818,7 +3839,11 @@ function motoImgFallback(img){
         <div style="font-size:16px;font-weight:700;display:flex;align-items:center"><span style="display:inline-flex;width:15px;height:15px;vertical-align:0px;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg></span>Trip Planner</div>
         <button onclick="closeTripPlanner()" style="background:var(--card);border:1px solid var(--border);border-radius:50%;width:32px;height:32px;color:var(--text);cursor:pointer;font-size:14px">✕</button>
       </div>
-      <div style="padding:0 20px 8px;font-size:11px;color:var(--muted);flex-shrink:0">Atur beberapa tujuan sekaligus. Kalau estimasi SOC tidak cukup, app akan menyarankan SPKLU terdekat di antara titik.</div>
+      <div style="padding:0 20px 6px;font-size:11px;color:var(--muted);flex-shrink:0">Atur beberapa tujuan sekaligus. Bila SOC turun di bawah batas aman, app otomatis menyisipkan titik cas Molis di jalur rute.</div>
+      <label style="display:flex;align-items:center;gap:8px;padding:0 20px 6px;font-size:11px;color:var(--text);flex-shrink:0;cursor:pointer">
+        <input id="tpAutoInsertChk" type="checkbox" checked style="width:16px;height:16px;flex:none" onchange="toggleTpAutoInsert(this.checked)">
+        <span>⚡ Otomatis sisipkan titik cas Molis di jalur (cadangan SOC ≥ 20%)</span>
+      </label>
 
       <div id="tpWaypointList" style="padding:6px 20px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:8px"></div>
 
@@ -3871,6 +3896,10 @@ function motoImgFallback(img){
     <button class="side-ctrl-btn" onclick="openNavSettingsModal()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span>Setelan</span>
+    </button>
+    <button class="side-ctrl-btn" onclick="openEmergencyModal()" style="color:#ff6b6b">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>Darurat</span>
     </button>
   </div>
 
@@ -4209,6 +4238,86 @@ function motoImgFallback(img){
       </div>
     </div>
   </div>
+</div>
+
+<!-- ══ CHECK-IN & LAPORAN KONDISI STASIUN KOMUNITAS ══ -->
+<div class="np-sheet-bg" id="stationCheckinSheet" onclick="if(event.target===this)closeNpSheet('stationCheckinSheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title">Status Komunitas Stasiun</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('stationCheckinSheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div class="molis-stat-card">
+        <div id="chkStationName" style="font-size:13px;font-weight:700">—</div>
+        <div id="chkStationMeta" style="font-size:10.5px;color:var(--muted);margin-top:3px">—</div>
+        <div id="chkExistingBadge" style="margin-top:5px"></div>
+      </div>
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:6px">Pilih Kondisi Terbaru:</div>
+      <div class="preset-row" id="chkStatusRow" style="margin-bottom:10px">
+        <button type="button" class="preset-btn active" data-s="ok" onclick="selectCheckinStatus('ok')">✅ Berfungsi</button>
+        <button type="button" class="preset-btn" data-s="busy" onclick="selectCheckinStatus('busy')">⏳ Penuh</button>
+        <button type="button" class="preset-btn" data-s="perm" onclick="selectCheckinStatus('perm')">🔑 Wajib Izin</button>
+        <button type="button" class="preset-btn" data-s="broken" onclick="selectCheckinStatus('broken')">❌ Rusak/Tutup</button>
+      </div>
+      <div class="uuid-field">
+        <label>Catatan Lapangan (colokan, biaya, jam buka, patokan)</label>
+        <input id="chkNoteInput" type="text" autocomplete="off" placeholder="mis. Schuko 2 lubang aman, izin ke satpam" style="font-family:inherit">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="modal-btn primary" style="flex:1.2" onclick="saveStationCheckin()">💾 Simpan Status</button>
+        <button class="btn-std" style="flex:1" onclick="sendCheckinToWa()">💬 Kirim ke WA</button>
+      </div>
+      <button class="btn-std" style="width:100%;margin-top:8px;justify-content:center" onclick="exportMolisWithCheckinsJson()">📤 Ekspor JSON Update Komunitas (untuk Repo)</button>
+      <button class="np-reset-link" id="chkClearBtn" style="display:none" onclick="clearStationCheckin()">Hapus Laporan Lokal Stasiun Ini</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODE TOURING & DARURAT CEPAT (SOS) ══ -->
+<div class="np-sheet-bg" id="emergencySheet" onclick="if(event.target===this)closeNpSheet('emergencySheet')">
+  <div class="np-sheet">
+    <div class="np-sheet-hdr">
+      <div class="np-sheet-title" style="color:#ff5252">🆘 Mode Touring &amp; Darurat</div>
+      <button class="np-sheet-close" onclick="closeNpSheet('emergencySheet')">✕</button>
+    </div>
+    <div class="np-sheet-body">
+      <div class="sos-alert-box" id="sosSnapshotBox">
+        Memuat posisi GPS &amp; status baterai…
+      </div>
+      <div class="sos-rescue-box" id="sosNearestBox">
+        Mencari titik SPLU / SPKLU terdekat…
+      </div>
+
+      <div style="font-size:11.5px;font-weight:700;margin-bottom:6px">Situasi Saat Ini:</div>
+      <div class="preset-row" id="sosSituationRow" style="margin-bottom:10px">
+        <button type="button" class="preset-btn active" data-sit="Baterai Habis / Kritis" onclick="selectSosSituation(this)">🪫 Baterai Habis</button>
+        <button type="button" class="preset-btn" data-sit="Motor Mogok / Error" onclick="selectSosSituation(this)">🔧 Mogok</button>
+        <button type="button" class="preset-btn" data-sit="Ban Bocor / Darurat" onclick="selectSosSituation(this)">🛞 Ban Bocor</button>
+        <button type="button" class="preset-btn" data-sit="Update Posisi Touring" onclick="selectSosSituation(this)">📍 Posisi Konvoi</button>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <div class="uuid-field" style="flex:1"><label>Nama / Motor</label><input id="sosRiderInput" type="text" autocomplete="off" placeholder="mis. Andi - GESITS G1" onchange="saveSosPrefs()" style="font-family:inherit;font-size:11px"></div>
+        <div class="uuid-field" style="flex:1"><label>No. WA / Telp Darurat</label><input id="sosPhoneInput" type="tel" autocomplete="off" placeholder="0812xxxxxxxx" onchange="saveSosPrefs()" style="font-family:inherit;font-size:11px"></div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="modal-btn primary" style="flex:1.2;background:#25D366;color:#052e16" onclick="sendSosWhatsapp()">💬 Kirim SOS WhatsApp</button>
+        <button class="btn-std" style="flex:1" onclick="shareSosText()">📤 Bagikan Lokasi</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn-std" style="flex:1" onclick="callSosContact()">📞 Telepon Kontak</button>
+        <button class="btn-std text-danger" style="flex:1" onclick="toggleSosHazard(true)">🚨 Hazard Layar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sos-hazard-overlay" id="sosHazardOverlay" onclick="toggleSosHazard(false)">
+  <div style="font-size:48px">⚠️</div>
+  <div style="font-size:26px;letter-spacing:2px">DARURAT / HAZARD</div>
+  <div style="font-size:13px;font-weight:600;opacity:.9">Ketuk layar di mana saja untuk mematikan</div>
 </div>
 
 <!-- ══ CATAT NAMA (catatan lapangan OSM + SPKLU buatan user) ══ -->
@@ -17300,7 +17409,10 @@ function _molisNormalizeItem(raw, defaultSource){
     opCount: parseInt(raw.opCount || raw.connectors || 0, 10) || 0,
     available: avail, usageCost, dist: 0,
     isMolis: true, isMolisFriendly, sourceLabel,
-    userAdded: !!raw.isUserAdded || sourceLabel.startsWith('Import')
+    userAdded: !!raw.isUserAdded || sourceLabel.startsWith('Import'),
+    communityStatus: raw.communityStatus || '',
+    communityNote: raw.communityNote || '',
+    communityUpdatedAt: raw.communityUpdatedAt || 0
   };
 }
 
@@ -17897,6 +18009,379 @@ async function syncMolisNowFromUi(){
   await runMolisBackgroundSync({ silent: false, force: true });
 }
 
+// ── STATUS KOMUNITAS / CHECK-IN STASIUN ──
+const MOLIS_CHECKIN_KEY = 'molis_checkins_v1';
+let _activeCheckinStation = null;
+let _selectedCheckinStatus = 'ok';
+
+function molisStationKey(el){
+  if(!el || el.lat == null || el.lon == null) return '';
+  return 'chk_' + Number(el.lat).toFixed(4) + '_' + Number(el.lon).toFixed(4);
+}
+function _loadCheckinsMap(){
+  try{
+    const raw = localStorage.getItem(MOLIS_CHECKIN_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return (parsed && typeof parsed === 'object') ? parsed : {};
+  }catch(e){ return {}; }
+}
+function _saveCheckinsMap(map){
+  try{ localStorage.setItem(MOLIS_CHECKIN_KEY, JSON.stringify(map)); }catch(e){}
+}
+function molisGetCheckin(el){
+  if(!el) return null;
+  const k = molisStationKey(el);
+  const local = k ? _loadCheckinsMap()[k] : null;
+  if(local && local.status) return local;
+  if(el.communityStatus){
+    return {
+      status: el.communityStatus,
+      note: el.communityNote || '',
+      ts: el.communityUpdatedAt || 0,
+      fromRepo: true
+    };
+  }
+  return null;
+}
+function _checkinLabelMeta(status){
+  if(status === 'ok') return { cls: 'ok', label: '✅ Terverifikasi Berfungsi', short: '✅ OK' };
+  if(status === 'busy') return { cls: 'busy', label: '⏳ Penuh / Antre', short: '⏳ Penuh' };
+  if(status === 'perm') return { cls: 'perm', label: '🔑 Wajib Izin / Terbatas', short: '🔑 Izin' };
+  if(status === 'broken') return { cls: 'broken', label: '❌ Dilaporkan Rusak/Tutup', short: '❌ Rusak' };
+  return null;
+}
+function molisCheckinBadgeHtml(el, compact){
+  const chk = molisGetCheckin(el);
+  if(!chk) return '';
+  const m = _checkinLabelMeta(chk.status);
+  if(!m) return '';
+  const when = chk.ts ? (' · ' + _fmtMolisTime(chk.ts)) : '';
+  const note = (!compact && chk.note) ? (' — ' + escapeHtml(chk.note)) : '';
+  return `<span class="chk-pill ${m.cls}">${compact ? m.short : m.label}${!compact ? escapeHtml(when) : ''}${note}</span>`;
+}
+function selectCheckinStatus(s){
+  _selectedCheckinStatus = s || 'ok';
+  document.querySelectorAll('#chkStatusRow .preset-btn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.s === _selectedCheckinStatus);
+  });
+}
+function openStationCheckin(idx){
+  const list = (typeof lastChargingResults !== 'undefined' ? lastChargingResults : []) || [];
+  const el = list[idx];
+  if(!el) return;
+  openStationCheckinByObj(el);
+}
+function openStationCheckinByObj(el){
+  _activeCheckinStation = el;
+  const existing = molisGetCheckin(el);
+  selectCheckinStatus(existing ? existing.status : 'ok');
+  const nm = document.getElementById('chkStationName');
+  const mt = document.getElementById('chkStationMeta');
+  const bd = document.getElementById('chkExistingBadge');
+  const nt = document.getElementById('chkNoteInput');
+  const clr = document.getElementById('chkClearBtn');
+  if(nm) nm.textContent = el.name || 'SPKLU Molis';
+  if(mt) mt.textContent = `${Number(el.lat).toFixed(5)}, ${Number(el.lon).toFixed(5)}${el.operator ? ' · ' + el.operator : ''}${el.types ? ' · ' + el.types : ''}`;
+  if(bd) bd.innerHTML = molisCheckinBadgeHtml(el, false) || '<span style="font-size:10px;color:var(--muted)">Belum ada laporan kondisi terbaru</span>';
+  if(nt) nt.value = (existing && existing.note) ? existing.note : '';
+  const k = molisStationKey(el);
+  const hasLocal = !!(k && _loadCheckinsMap()[k]);
+  if(clr) clr.style.display = hasLocal ? 'block' : 'none';
+  openNpSheet('stationCheckinSheet');
+}
+async function saveStationCheckin(){
+  const el = _activeCheckinStation;
+  if(!el) return;
+  const k = molisStationKey(el);
+  if(!k) return;
+  const note = (document.getElementById('chkNoteInput')?.value || '').trim();
+  const map = _loadCheckinsMap();
+  map[k] = {
+    status: _selectedCheckinStatus,
+    note,
+    ts: Date.now(),
+    stationName: el.name || 'SPKLU Molis',
+    lat: el.lat,
+    lon: el.lon
+  };
+  _saveCheckinsMap(map);
+  _spkluAheadTs = 0;
+  closeNpSheet('stationCheckinSheet');
+  renderSpkluSheetList();
+  if(chargingActive && mapInstance && userLat != null){
+    await fetchChargingStations({ quiet: true, noFit: true });
+  }
+  showToast('✅ Status stasiun disimpan');
+}
+async function clearStationCheckin(){
+  const el = _activeCheckinStation;
+  if(!el) return;
+  const k = molisStationKey(el);
+  const map = _loadCheckinsMap();
+  delete map[k];
+  _saveCheckinsMap(map);
+  closeNpSheet('stationCheckinSheet');
+  renderSpkluSheetList();
+  if(chargingActive && mapInstance && userLat != null){
+    await fetchChargingStations({ quiet: true, noFit: true });
+  }
+  showToast('🗑️ Laporan lokal stasiun dihapus');
+}
+function sendCheckinToWa(){
+  const el = _activeCheckinStation;
+  if(!el) return;
+  const note = (document.getElementById('chkNoteInput')?.value || '').trim();
+  const m = _checkinLabelMeta(_selectedCheckinStatus) || { label: _selectedCheckinStatus };
+  const la = Number(el.lat).toFixed(6), lo = Number(el.lon).toFixed(6);
+  const txt = [
+    '⚡ Laporan Status Stasiun Molis (GESITS)',
+    `Nama: ${el.name || 'SPKLU Molis'}`,
+    `Status: ${m.label}`,
+    `Koordinat: ${la}, ${lo}`,
+    `Maps: https://maps.google.com/?q=${la},${lo}`,
+    el.types ? `Colokan: ${el.types}` : '',
+    note ? `Catatan: ${note}` : ''
+  ].filter(Boolean).join('\n');
+  const waUrl = 'https://wa.me/' + CATAT_WA_NUMBER + '?text=' + encodeURIComponent(txt);
+  try{ if(window.Android && typeof Android.openUrl === 'function'){ Android.openUrl(waUrl); return; } }catch(e){}
+  try{ const w = window.open(waUrl, '_blank'); if(w) return; }catch(e){}
+  try{ if(window.Android && typeof Android.shareText === 'function'){ Android.shareText(txt, 'Laporan Status Molis'); return; } }catch(e){}
+  if(navigator.clipboard) navigator.clipboard.writeText(txt).then(()=>showToast('📋 Laporan disalin ke clipboard'));
+}
+async function exportMolisWithCheckinsJson(){
+  const all = await getAllMolisElements();
+  const map = _loadCheckinsMap();
+  const merged = all.map(el => {
+    const chk = map[molisStationKey(el)];
+    const out = {
+      id: el.id,
+      name: el.name,
+      operatorName: el.operator || '',
+      lat: el.lat,
+      lng: el.lon,
+      socketType: el.types || 'SPLU / Schuko Molis',
+      powerKw: el.maxKw || null,
+      isUserAdded: !!el.userAdded,
+      distanceKm: null,
+      notes: el.addr || '',
+      sourceLabel: el.sourceLabel || 'Molis',
+      isMolisFriendly: el.isMolisFriendly !== false
+    };
+    if(chk){
+      out.communityStatus = chk.status;
+      out.communityNote = chk.note || '';
+      out.communityUpdatedAt = chk.ts || Date.now();
+      if(chk.status === 'broken') out.available = false;
+    } else if(el.communityStatus){
+      out.communityStatus = el.communityStatus;
+      out.communityNote = el.communityNote || '';
+      out.communityUpdatedAt = el.communityUpdatedAt || 0;
+    }
+    return out;
+  });
+  // Tambahkan check-in pada titik OCM/OSM yang belum masuk DB Molis
+  Object.keys(map).forEach(k => {
+    const chk = map[k];
+    if(!chk || chk.lat == null || chk.lon == null) return;
+    if(merged.some(m => haversine(m.lat, m.lng, chk.lat, chk.lon) < 45)) return;
+    merged.push({
+      id: k,
+      name: chk.stationName || 'SPKLU Komunitas',
+      operatorName: '',
+      lat: chk.lat,
+      lng: chk.lon,
+      socketType: 'SPLU / Schuko Molis',
+      powerKw: null,
+      isUserAdded: true,
+      distanceKm: null,
+      notes: chk.note || '',
+      sourceLabel: 'Komunitas Molis',
+      isMolisFriendly: chk.status !== 'broken',
+      communityStatus: chk.status,
+      communityNote: chk.note || '',
+      communityUpdatedAt: chk.ts || Date.now(),
+      available: chk.status !== 'broken'
+    });
+  });
+  const json = JSON.stringify(merged, null, 2);
+  try{
+    if(IS_NATIVE_ANDROID && window.Android && typeof Android.exportFile === 'function'){
+      Android.exportFile('charging_molis_indonesia.json', json, 'application/json');
+      return;
+    }
+  }catch(e){}
+  const blob = new Blob([json], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'charging_molis_indonesia.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+  showToast(`📤 JSON komunitas diekspor (${merged.length} titik)`);
+}
+
+// ── MODE TOURING & DARURAT CEPAT (SOS) ──
+const SOS_PHONE_KEY = 'sos_contact_phone';
+const SOS_RIDER_KEY = 'sos_rider_label';
+let _sosSituation = 'Baterai Habis / Kritis';
+let _sosNearestStation = null;
+let _sosHazardTimer = null;
+
+function saveSosPrefs(){
+  try{
+    localStorage.setItem(SOS_PHONE_KEY, (document.getElementById('sosPhoneInput')?.value || '').trim());
+    localStorage.setItem(SOS_RIDER_KEY, (document.getElementById('sosRiderInput')?.value || '').trim());
+  }catch(e){}
+}
+function selectSosSituation(btn){
+  if(!btn) return;
+  _sosSituation = btn.dataset.sit || 'Darurat Touring';
+  document.querySelectorAll('#sosSituationRow .preset-btn').forEach(b=>b.classList.toggle('active', b === btn));
+}
+async function openEmergencyModal(){
+  openNpSheet('emergencySheet');
+  try{
+    const p = localStorage.getItem(SOS_PHONE_KEY) || '';
+    const r = localStorage.getItem(SOS_RIDER_KEY) || '';
+    const pi = document.getElementById('sosPhoneInput');
+    const ri = document.getElementById('sosRiderInput');
+    if(pi) pi.value = p;
+    if(ri) ri.value = r;
+  }catch(e){}
+
+  const soc = getEffSoc();
+  const vbat = getEffVbat();
+  const snap = document.getElementById('sosSnapshotBox');
+  if(snap){
+    const gpsTxt = (userLat != null && userLng != null)
+      ? `<b>${userLat.toFixed(6)}, ${userLng.toFixed(6)}</b>`
+      : '<span style="color:#ffb300">Menunggu sinyal GPS…</span>';
+    const batTxt = `${soc != null ? soc + '%' : '—'}${vbat != null && vbat > 1 ? ' (' + vbat.toFixed(1) + ' V)' : ''}`;
+    snap.innerHTML = `<div style="font-weight:700;margin-bottom:4px">📍 Posisi &amp; Status Motor Saat Ini</div>
+      <div>Lokasi: ${gpsTxt}</div>
+      <div>Baterai: <b>${batTxt}</b> · Waktu: ${new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}</div>`;
+  }
+
+  const nearBox = document.getElementById('sosNearestBox');
+  _sosNearestStation = null;
+  if(userLat == null || userLng == null){
+    if(nearBox) nearBox.innerHTML = 'Aktifkan GPS untuk mencari titik SPLU / SPKLU terdekat.';
+    return;
+  }
+  const pool = _molisDedupList([
+    ...userSpkluElements(),
+    ...(await getAllMolisElements()),
+    ...(Array.isArray(lastChargingResults) ? lastChargingResults : [])
+  ]).filter(el => {
+    const chk = molisGetCheckin(el);
+    return el.available !== false && (!chk || chk.status !== 'broken');
+  });
+  if(!pool.length){
+    if(nearBox) nearBox.innerHTML = 'Belum ada titik charging terdekat di database lokal.';
+    return;
+  }
+  pool.sort((a,b) => haversine(userLat,userLng,a.lat,a.lon) - haversine(userLat,userLng,b.lat,b.lon));
+  const best = pool[0];
+  const distKm = (haversine(userLat,userLng,best.lat,best.lon) / 1000).toFixed(1);
+  _sosNearestStation = best;
+  if(nearBox){
+    nearBox.innerHTML = `<div style="font-weight:700;color:var(--green);margin-bottom:3px">⚡ Titik Cas Terdekat (${distKm} km)</div>
+      <div style="font-weight:700">${escapeHtml(best.name)}</div>
+      <div style="color:var(--muted);font-size:10.5px;margin-top:2px">${best.types ? escapeHtml(best.types) : 'SPLU/SPKLU'}${best.addr ? ' · ' + escapeHtml(best.addr) : ''}</div>
+      <button class="spklu-route-btn" style="margin-top:7px" onclick="routeSosNearestSpklu()">${svgIco('nav',13)} Rute ke Titik Cas Terdekat</button>`;
+  }
+}
+function routeSosNearestSpklu(){
+  if(!_sosNearestStation) return;
+  closeNpSheet('emergencySheet');
+  switchTab('navigasi', document.querySelectorAll('.tab')[2]);
+  selectDestination(_sosNearestStation.lon, _sosNearestStation.lat, _sosNearestStation.name);
+  showToast('🧭 Mengarahkan ke ' + _sosNearestStation.name);
+}
+function _normalizeWaPhone(raw){
+  const digits = String(raw || '').replace(/[^\d]/g, '');
+  if(!digits) return '';
+  if(digits.startsWith('0')) return '62' + digits.slice(1);
+  if(digits.startsWith('8')) return '62' + digits;
+  return digits;
+}
+function buildSosMessage(){
+  saveSosPrefs();
+  const rider = (document.getElementById('sosRiderInput')?.value || '').trim();
+  const soc = getEffSoc();
+  const vbat = getEffVbat();
+  const locLine = (userLat != null && userLng != null)
+    ? `Lokasi: https://maps.google.com/?q=${userLat.toFixed(6)},${userLng.toFixed(6)} (${userLat.toFixed(5)}, ${userLng.toFixed(5)})`
+    : 'Lokasi GPS: belum terkunci';
+  const nearLine = _sosNearestStation && userLat != null
+    ? `SPLU Terdekat: ${_sosNearestStation.name} (${(haversine(userLat,userLng,_sosNearestStation.lat,_sosNearestStation.lon)/1000).toFixed(1)} km)`
+    : '';
+  return [
+    `🆘 *DARURAT TOURING GESITS*`,
+    rider ? `Pengendara: ${rider}` : '',
+    `Kondisi: ${_sosSituation}`,
+    `Baterai: ${soc != null ? soc + '%' : 'tidak terbaca'}${vbat != null && vbat > 1 ? ' (' + vbat.toFixed(1) + 'V)' : ''}`,
+    locLine,
+    nearLine
+  ].filter(Boolean).join('\n');
+}
+function sendSosWhatsapp(){
+  const txt = buildSosMessage();
+  const phone = _normalizeWaPhone(document.getElementById('sosPhoneInput')?.value || '');
+  const url = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(txt)}`
+    : `https://wa.me/?text=${encodeURIComponent(txt)}`;
+  try{ if(window.Android && typeof Android.openUrl === 'function'){ Android.openUrl(url); return; } }catch(e){}
+  try{ const w = window.open(url, '_blank'); if(w) return; }catch(e){}
+  shareSosText();
+}
+function shareSosText(){
+  const txt = buildSosMessage();
+  try{ if(window.Android && typeof Android.shareText === 'function'){ Android.shareText(txt, 'Darurat Touring GESITS'); return; } }catch(e){}
+  if(navigator.share){ navigator.share({ title: 'Darurat Touring GESITS', text: txt }).catch(()=>{}); return; }
+  if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(()=>showToast('📋 Pesan SOS disalin ke clipboard')); return; }
+  showToast('Fitur bagikan tidak tersedia');
+}
+function callSosContact(){
+  saveSosPrefs();
+  const raw = (document.getElementById('sosPhoneInput')?.value || '').trim();
+  if(!raw){
+    showToast('⚠️ Isi No. WA / Telp Darurat terlebih dahulu');
+    document.getElementById('sosPhoneInput')?.focus();
+    return;
+  }
+  const telUrl = 'tel:' + raw.replace(/[^\d+]/g, '');
+  try{ if(window.Android && typeof Android.openUrl === 'function'){ Android.openUrl(telUrl); return; } }catch(e){}
+  window.location.href = telUrl;
+}
+function toggleSosHazard(on){
+  const ov = document.getElementById('sosHazardOverlay');
+  if(!ov) return;
+  ov.classList.toggle('show', !!on);
+  if(_sosHazardTimer){ clearInterval(_sosHazardTimer); _sosHazardTimer = null; }
+  if(on){
+    const beep = ()=>{
+      try{
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if(!Ctx) return;
+        const ctx = new Ctx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = 880;
+        const t = ctx.currentTime;
+        gain.gain.setValueAtTime(0.001, t);
+        gain.gain.linearRampToValueAtTime(0.18, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(t); osc.stop(t + 0.16);
+        setTimeout(()=>{ try{ ctx.close(); }catch(_){} }, 250);
+      }catch(e){}
+    };
+    beep();
+    _sosHazardTimer = setInterval(beep, 1800);
+  }
+}
+
 // ── SPKLU Terdekat (reuse fetchChargingStations / lastChargingResults) ──
 function renderSpkluSheetList(){
   const wrap = document.getElementById('spkluSheetList');
@@ -17909,13 +18394,17 @@ function renderSpkluSheetList(){
   wrap.innerHTML = list.slice(0,12).map((el,i)=>{
     const distKm=(el.dist/1000).toFixed(1);
     const tagTxt = el.userAdded && !el.isMolis ? 'catatanmu' : (el.isMolis ? (el.sourceLabel || 'Molis') : '');
+    const chk = molisGetCheckin(el);
+    const isBroken = chk ? chk.status === 'broken' : !el.available;
+    const chkHtml = molisCheckinBadgeHtml(el, true);
     return `<div class="np-list-item" style="cursor:pointer" onclick="routeToSpkluFromSheet(${i})">
       <div class="np-list-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
       <div style="flex:1;min-width:0">
-        <div class="np-list-name">${escapeHtml(el.name)}</div>
+        <div class="np-list-name">${escapeHtml(el.name)} ${chkHtml}</div>
         <div class="np-list-sub">${distKm} km${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor':''}${el.types?' · '+escapeHtml(el.types):''}${tagTxt?' · '+escapeHtml(tagTxt):''}</div>
       </div>
-      <div class="np-list-badge" style="${el.available?'':'background:rgba(255,82,82,.14);color:var(--danger)'}">●</div>
+      <button type="button" class="btn-std-sm" onclick="event.stopPropagation();openStationCheckin(${i})" title="Lapor status stasiun" style="padding:5px 8px;font-size:11px">📝</button>
+      <div class="np-list-badge" style="${!isBroken?'':'background:rgba(255,82,82,.14);color:var(--danger)'}">●</div>
       <div style="color:var(--muted);font-size:14px;margin-left:2px">›</div>
     </div>`;
   }).join('');
@@ -23671,21 +24160,26 @@ async function fetchChargingStations(opts){
     if(mapInstance && (chargingActive || !noFit)){
       elements.forEach((el,idx)=>{
         const distKm=(el.dist/1000).toFixed(1);
+        const chkHtml = molisCheckinBadgeHtml(el, false);
         const statusTxt = el.isMolis
           ? '<span style="color:#00e5ff">'+statusDot('#00e5ff')+escapeHtml(el.sourceLabel||'Molis')+(el.isMolisFriendly!==false?' · Ramah Motor Listrik':'')+'</span>'
           : el.fromOsm ? '<span style="color:var(--muted)">'+statusDot('#4fc3f7')+'Data OpenStreetMap</span>'
           : el.userAdded ? '<span style="color:var(--muted)">'+statusDot('#ffb300')+'Catatanmu · belum terverifikasi</span>'
           : el.available ? '<span style="color:#00e676">'+statusDot('#00e676')+'Beroperasi</span>'
           : '<span style="color:#ff3d3d">'+statusDot('#ff3d3d')+'Status tidak pasti</span>';
-        const popup=new mapboxgl.Popup({offset:25,closeButton:true,closeOnClick:true,maxWidth:'260px'})
+        const popup=new mapboxgl.Popup({offset:25,closeButton:true,closeOnClick:true,maxWidth:'275px'})
           .setHTML(`<div style="font-size:13px;font-weight:700"><span style="color:var(--green)">${svgIco('zap',14)}</span> ${escapeHtml(el.name)}</div>
+            ${chkHtml ? `<div>${chkHtml}</div>` : ''}
             <div style="font-size:11px;color:var(--muted);margin-top:2px">Provider: ${el.operator?escapeHtml(el.operator):'tidak diketahui'}</div>
             ${el.addr?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${escapeHtml(el.addr)}</div>`:''}
             <div style="font-size:11px;color:var(--muted);margin-top:3px">${distKm} km dari lokasi</div>
             <div style="font-size:11px;color:var(--green);margin-top:2px">Sambungan: ${el.types?escapeHtml(el.types):'tidak diketahui'}${el.maxKw?' · maks '+el.maxKw+'kW':''}${el.opCount?' · '+el.opCount+' konektor':''}</div>
             ${el.usageCost?`<div style="font-size:11px;color:var(--muted);margin-top:2px">Biaya: ${escapeHtml(el.usageCost)}</div>`:''}
             <div style="font-size:11px;margin-top:2px">${statusTxt}</div>
-            <button class="spklu-route-btn" onclick="routeToSpkluFromSheet(${idx})">${svgIco('nav',13)} Rute ke sini</button>`);
+            <div class="spklu-popup-actions">
+              <button class="spklu-route-btn" onclick="routeToSpkluFromSheet(${idx})">${svgIco('nav',13)} Rute</button>
+              <button class="spklu-checkin-btn" onclick="openStationCheckin(${idx})">📝 Lapor</button>
+            </div>`);
         const m=new mapboxgl.Marker({element:makeChargingMarkerEl(el)})
           .setLngLat([el.lon,el.lat])
           .setPopup(popup)
@@ -23722,8 +24216,16 @@ function escapeHtml(s){
 }
 function makeChargingMarkerEl(el){
   const div=document.createElement('div');
-  div.className='charging-marker'+(el && el.isMolis ? ' molis' : '');
-  div.innerHTML=svgIco('zap',15);
+  const chk = molisGetCheckin(el);
+  let cls = 'charging-marker';
+  if(el && el.isMolis) cls += ' molis';
+  if(chk){
+    if(chk.status === 'ok') cls += ' chk-ok';
+    else if(chk.status === 'busy' || chk.status === 'perm') cls += ' chk-busy';
+    else if(chk.status === 'broken') cls += ' chk-broken';
+  }
+  div.className = cls;
+  div.innerHTML = svgIco('zap',15);
   return div;
 }
 
@@ -23762,6 +24264,8 @@ let tpLastPlan = null; // hasil hitung terakhir, dipakai utk tombol "Mulai Navig
 let tpPickModeIdx = null; // index waypoint yang sedang menunggu tap di peta, null = nonaktif
 
 function openTripPlanner(){
+  const chkEl = document.getElementById('tpAutoInsertChk');
+  if(chkEl) chkEl.checked = isTpAutoInsertEnabled();
   if(!tpWaypoints.length){
     // Mulai dari lokasi user kalau ada, lalu 1 slot tujuan kosong
     if(userLat!==null) tpWaypoints.push({label:'Lokasi Saat Ini', lng:userLng, lat:userLat, isStart:true});
@@ -23910,62 +24414,231 @@ function tpSelectResult(i,k){
   renderTripPlanner();
 }
 
-// ── Hitung rencana trip: jarak/waktu/SOC per-leg, auto-suggest SPKLU bila kurang ──
+// ── Hitung rencana trip: jarak/waktu/SOC per-leg + auto-insert titik cas Molis di koridor rute ──
+const TP_AUTO_INSERT_KEY = 'tp_auto_insert_spklu';
+const TP_RESERVE_SOC = 20;
+const TP_RECHARGE_TARGET_SOC = 85;
+
+function isTpAutoInsertEnabled(){
+  try{ return localStorage.getItem(TP_AUTO_INSERT_KEY) !== '0'; }catch(e){ return true; }
+}
+function toggleTpAutoInsert(checked){
+  try{ localStorage.setItem(TP_AUTO_INSERT_KEY, checked ? '1' : '0'); }catch(e){}
+}
+function _tpSamplePolyline(coords, maxSamples){
+  if(!Array.isArray(coords) || !coords.length) return [];
+  const step = Math.max(1, Math.floor(coords.length / (maxSamples || 90)));
+  const out = [];
+  let cumKm = 0;
+  for(let i = 0; i < coords.length; i++){
+    if(i > 0) cumKm += haversine(coords[i-1][1], coords[i-1][0], coords[i][1], coords[i][0]) / 1000;
+    if(i === 0 || i === coords.length - 1 || i % step === 0){
+      out.push({ lng: coords[i][0], lat: coords[i][1], cumKm });
+    }
+  }
+  return out;
+}
+function _tpDistToSampledRoute(lon, lat, samples){
+  let bestDist = Infinity, bestSample = null;
+  for(const s of samples){
+    const d = haversine(lat, lon, s.lat, s.lng);
+    if(d < bestDist){ bestDist = d; bestSample = s; }
+  }
+  return { distM: bestDist, cumKm: bestSample ? bestSample.cumKm : 0 };
+}
+function _tpFindCorridorCharger(a, b, coords, whStart, legDistKm, eff, fullCapWh, chargers, usedKeys){
+  if(!Array.isArray(chargers) || !chargers.length) return null;
+  const maxReachKm = Math.max(0, (whStart - (0.05 * fullCapWh)) / eff);
+  const idealKm = Math.max(5, (whStart - (TP_RESERVE_SOC / 100) * fullCapWh) / eff);
+  let fallbackSamples;
+  if(!coords || coords.length < 2){
+    const interp = [];
+    const steps = 30;
+    for(let k = 0; k <= steps; k++){
+      const t = k / steps;
+      interp.push([a.lng + (b.lng - a.lng) * t, a.lat + (b.lat - a.lat) * t]);
+    }
+    fallbackSamples = _tpSamplePolyline(interp, 32);
+  } else {
+    fallbackSamples = _tpSamplePolyline(coords, 100);
+  }
+  if(!fallbackSamples.length) return null;
+  const totalSampleKm = fallbackSamples[fallbackSamples.length - 1].cumKm || legDistKm || 1;
+
+  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+  for(const s of fallbackSamples){
+    if(s.lat < minLat) minLat = s.lat;
+    if(s.lat > maxLat) maxLat = s.lat;
+    if(s.lng < minLng) minLng = s.lng;
+    if(s.lng > maxLng) maxLng = s.lng;
+  }
+  const padDeg = 0.14; // ~15 km bounding box prefilter
+
+  const pickBest = (maxCorridorM) => {
+    let best = null, bestScore = -1e9;
+    for(const c of chargers){
+      if(!c || c.available === false) continue;
+      if(c.lat < minLat - padDeg || c.lat > maxLat + padDeg || c.lon < minLng - padDeg || c.lon > maxLng + padDeg) continue;
+      const key = molisStationKey(c);
+      if(usedKeys.has(key)) continue;
+      const chk = molisGetCheckin(c);
+      if(chk && chk.status === 'broken') continue;
+
+      const hit = _tpDistToSampledRoute(c.lon, c.lat, fallbackSamples);
+      if(hit.distM > maxCorridorM) continue;
+      const scaledKm = (hit.cumKm / totalSampleKm) * legDistKm + (hit.distM / 1000);
+      if(scaledKm < 3 || scaledKm > maxReachKm || scaledKm >= legDistKm - 2) continue;
+
+      // Skor: utamakan jangkauan optimal (~idealKm) agar jumlah stop minimal, dekat jalur, ramah molis & status OK
+      let score = 100 - Math.abs(scaledKm - idealKm) * 1.4 - (hit.distM / 1000) * 6;
+      if(c.isMolisFriendly !== false && c.isMolis) score += 12;
+      if(chk && chk.status === 'ok') score += 15;
+      if(chk && (chk.status === 'busy' || chk.status === 'perm')) score -= 8;
+      if(score > bestScore){
+        bestScore = score;
+        best = Object.assign({}, c, { _detourKm: hit.distM / 1000, _atKm: scaledKm });
+      }
+    }
+    return best;
+  };
+  return pickBest(5000) || pickBest(12000);
+}
+
 async function calculateTripPlan(){
-  const points = tpWaypoints.filter(wp=>wp.lng!==null && wp.lat!==null);
-  if(points.length<2){ showToast('Isi minimal 2 titik tujuan dulu'); return; }
+  const chkEl = document.getElementById('tpAutoInsertChk');
+  if(chkEl) chkEl.checked = isTpAutoInsertEnabled();
+  // Bersihkan stop otomatis dari hitungan sebelumnya agar tidak menumpuk saat dihitung ulang
+  const basePoints = tpWaypoints
+    .filter(wp => !wp.autoInserted && wp.lng !== null && wp.lat !== null)
+    .map(wp => Object.assign({}, wp));
+  if(basePoints.length < 2){ showToast('Isi minimal 2 titik tujuan dulu'); return; }
 
   const summaryEl=document.getElementById('tpSummary');
   summaryEl.style.display='block';
-  summaryEl.innerHTML='<div style="font-size:12px;color:var(--muted)">⏳ Menghitung rute & estimasi energi...</div>';
+  summaryEl.innerHTML='<div style="font-size:12px;color:var(--muted)">⏳ Menghitung rute & mencari titik cas Molis di jalur...</div>';
   document.getElementById('tpStartBtn').style.display='none';
 
-  // Efisiensi terbaik yg tersedia saat ini (sama sumber dgn estimateSocAtDest)
   const eff = (tripEnergyWh > 0 && getTripKm() > 0)
               ? tripEnergyWh / getTripKm()
               : REF_WHKM;
   const fullCapWh = getFullCapacityWh();
-  let socNow = (getEffSoc()!==null) ? getEffSoc() : 100; // asumsi 100% kalau belum connect
+  const socNow = (getEffSoc()!==null) ? getEffSoc() : 100;
   let whRemain = (socNow/100) * fullCapWh;
+  const reserveWh = (TP_RESERVE_SOC / 100) * fullCapWh;
 
+  const autoInsert = isTpAutoInsertEnabled();
+  const chargers = _molisDedupList([
+    ...(typeof userSpkluElements === 'function' ? userSpkluElements() : []),
+    ...(typeof getAllMolisElements === 'function' ? await getAllMolisElements() : []),
+    ...(Array.isArray(lastChargingResults) ? lastChargingResults : [])
+  ]);
+
+  const workingPoints = [basePoints[0]];
+  const pendingTargets = basePoints.slice(1);
+  const usedChargerKeys = new Set();
   const legs = [];
   let warnCount = 0;
+  let autoStopCount = 0;
+  const MAX_AUTO_STOPS = 6;
 
-  for(let i=0;i<points.length-1;i++){
-    const a=points[i], b=points[i+1];
-    let legDistKm=null, legDurMin=null;
+  while(pendingTargets.length){
+    const a = workingPoints[workingPoints.length - 1];
+    const b = pendingTargets[0];
+    let legDistKm = null, legDurMin = null, coords = null;
     try{
-      const r = await tpFetchLegRoute(a.lng,a.lat,b.lng,b.lat);
-      if(r){ legDistKm=r.distance/1000; legDurMin=Math.round(r.duration/60); }
+      const r = await tpFetchLegRoute(a.lng, a.lat, b.lng, b.lat);
+      if(r){
+        legDistKm = r.distance / 1000;
+        legDurMin = Math.round(r.duration / 60);
+        coords = r.geometry && Array.isArray(r.geometry.coordinates) ? r.geometry.coordinates : null;
+      }
     }catch(e){}
-    if(legDistKm===null){
-      // fallback garis lurus kalau routing gagal
-      legDistKm = haversine(a.lat,a.lng,b.lat,b.lng)/1000 * 1.3; // faktor jalan berkelok
+    if(legDistKm === null){
+      legDistKm = haversine(a.lat, a.lng, b.lat, b.lng) / 1000 * 1.3;
     }
+
     const whNeeded = legDistKm * eff;
+    const whAfterDirect = whRemain - whNeeded;
+    const isLastTarget = pendingTargets.length === 1;
+    const needsStop = whAfterDirect < (isLastTarget ? Math.min(reserveWh, 0.12 * fullCapWh) : reserveWh);
+
+    if(autoInsert && needsStop && autoStopCount < MAX_AUTO_STOPS){
+      const stopCharger = _tpFindCorridorCharger(a, b, coords, whRemain, legDistKm, eff, fullCapWh, chargers, usedChargerKeys);
+      if(stopCharger){
+        autoStopCount++;
+        usedChargerKeys.add(molisStationKey(stopCharger));
+        const stopWp = {
+          label: '⚡ ' + stopCharger.name,
+          lng: stopCharger.lon,
+          lat: stopCharger.lat,
+          isSpklu: true,
+          autoInserted: true,
+          chargerMeta: stopCharger
+        };
+        // Hitung rute pasti A -> Titik Cas
+        let sDistKm = null, sDurMin = null;
+        try{
+          const sr = await tpFetchLegRoute(a.lng, a.lat, stopWp.lng, stopWp.lat);
+          if(sr){ sDistKm = sr.distance / 1000; sDurMin = Math.round(sr.duration / 60); }
+        }catch(e){}
+        if(sDistKm === null) sDistKm = haversine(a.lat, a.lng, stopWp.lat, stopWp.lng) / 1000 * 1.25;
+        const sWh = sDistKm * eff;
+        const sEnough = whRemain >= sWh;
+        if(!sEnough) warnCount++;
+        const sWhAfter = Math.max(0, whRemain - sWh);
+        const sSocAfter = Math.round((sWhAfter / fullCapWh) * 100);
+
+        const targetWh = (TP_RECHARGE_TARGET_SOC / 100) * fullCapWh;
+        const chargeAddedWh = Math.max(0, targetWh - sWhAfter);
+        const chargerKw = (stopCharger.maxKw && stopCharger.maxKw > 0) ? Math.min(stopCharger.maxKw, 1.5) : 0.85;
+        const chargeMin = Math.max(15, Math.round((chargeAddedWh / (chargerKw * 1000)) * 60));
+
+        legs.push({
+          from: a.label, to: stopWp.label, distKm: sDistKm, durMin: sDurMin,
+          whNeeded: sWh, enough: sEnough,
+          socBefore: Math.round((whRemain / fullCapWh) * 100),
+          socAfter: sSocAfter,
+          autoChargeStop: true,
+          chargeToSoc: TP_RECHARGE_TARGET_SOC,
+          chargeMin,
+          detourKm: stopCharger._detourKm
+        });
+
+        workingPoints.push(stopWp);
+        whRemain = Math.max(sWhAfter, targetWh);
+        continue;
+      }
+    }
+
     const enough = whRemain >= whNeeded;
     if(!enough) warnCount++;
     const whAfter = whRemain - whNeeded;
-    const socAfter = Math.max(0, (whAfter/fullCapWh)*100);
+    const socAfter = Math.max(0, (whAfter / fullCapWh) * 100);
 
-    legs.push({
-      from:a.label, to:b.label, distKm:legDistKm, durMin:legDurMin,
-      whNeeded, enough, socBefore: Math.round((whRemain/fullCapWh)*100), socAfter: Math.round(socAfter)
-    });
-
-    whRemain = Math.max(0, whAfter);
-
-    // Auto-suggest SPKLU kalau leg ini sudah kurang & ada hasil pencarian SPKLU sebelumnya
-    if(!enough && lastChargingResults.length){
-      const nearMid = lastChargingResults
-        .map(s=>({...s, distToB: haversine(s.lat,s.lon,b.lat,b.lng)}))
-        .sort((x,y)=>x.distToB-y.distToB)[0];
-      if(nearMid) legs[legs.length-1].suggestSpklu = nearMid;
+    const legObj = {
+      from: a.label, to: b.label, distKm: legDistKm, durMin: legDurMin,
+      whNeeded, enough,
+      socBefore: Math.round((whRemain / fullCapWh) * 100),
+      socAfter: Math.round(socAfter)
+    };
+    if(!enough && chargers.length){
+      const nearMid = chargers
+        .filter(s => s.available !== false)
+        .map(s => ({ ...s, distToB: haversine(s.lat, s.lon, b.lat, b.lng) }))
+        .sort((x,y) => x.distToB - y.distToB)[0];
+      if(nearMid) legObj.suggestSpklu = nearMid;
     }
+    legs.push(legObj);
+    workingPoints.push(pendingTargets.shift());
+    whRemain = b.isSpklu ? Math.max(Math.max(0, whAfter), (TP_RECHARGE_TARGET_SOC / 100) * fullCapWh) : Math.max(0, whAfter);
   }
 
-  tpLastPlan = {legs, points};
-  renderTripSummary(legs, warnCount);
+  // Perbarui daftar waypoint agar titik cas otomatis terlihat & siap dinavigasikan berurutan
+  tpWaypoints = workingPoints;
+  renderTripPlanner();
+
+  tpLastPlan = { legs, points: workingPoints, autoStopCount };
+  renderTripSummary(legs, warnCount, autoStopCount);
   document.getElementById('tpStartBtn').style.display='block';
 }
 
@@ -23973,11 +24646,11 @@ function tpFetchLegRoute(fromLng,fromLat,toLng,toLat){
   return new Promise(async (resolve)=>{
     try{
       if(MAP_PROVIDER==='osm'){
-        const url=`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false&alternatives=false`;
+        const url=`https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&alternatives=false`;
         const r=await fetch(url); const d=await r.json();
         if(d.code==='Ok'&&d.routes&&d.routes.length) return resolve(d.routes[0]);
       } else if(MAPBOX_TOKEN){
-        const url=`https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false&exclude=motorway&access_token=${MAPBOX_TOKEN}`;
+        const url=`https://api.mapbox.com/directions/v5/mapbox/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=full&geometries=geojson&exclude=motorway&access_token=${MAPBOX_TOKEN}`;
         const r=await fetch(url); const d=await r.json();
         if(d.routes&&d.routes.length) return resolve(d.routes[0]);
       }
@@ -23986,26 +24659,32 @@ function tpFetchLegRoute(fromLng,fromLat,toLng,toLat){
   });
 }
 
-function renderTripSummary(legs, warnCount){
+function renderTripSummary(legs, warnCount, autoStopCount){
   const totalDist = legs.reduce((s,l)=>s+l.distKm,0);
   const totalDur = legs.reduce((s,l)=>s+(l.durMin||0),0);
+  const totalChargeMin = legs.reduce((s,l)=>s+(l.chargeMin||0),0);
   const totalWh = legs.reduce((s,l)=>s+l.whNeeded,0);
 
   let html = `<div style="display:flex;justify-content:space-between;margin-bottom:8px">
     <div><div style="font-size:18px;font-weight:700;font-family:'Rajdhani',sans-serif">${totalDist.toFixed(1)} km</div><div style="font-size:10px;color:var(--muted)">Total Jarak</div></div>
-    <div><div style="font-size:18px;font-weight:700;font-family:'Rajdhani',sans-serif">${totalDur||'—'} mnt</div><div style="font-size:10px;color:var(--muted)">Estimasi Waktu</div></div>
+    <div><div style="font-size:18px;font-weight:700;font-family:'Rajdhani',sans-serif">${totalDur ? (totalDur + totalChargeMin) : '—'} mnt</div><div style="font-size:10px;color:var(--muted)">${totalChargeMin ? 'Jalan + Cas' : 'Estimasi Waktu'}</div></div>
     <div><div style="font-size:18px;font-weight:700;font-family:'Rajdhani',sans-serif">${totalWh.toFixed(0)} Wh</div><div style="font-size:10px;color:var(--muted)">Energi Dibutuhkan</div></div>
   </div>`;
 
+  if(autoStopCount > 0){
+    html += `<div style="background:rgba(0,229,255,0.1);border:1px solid rgba(0,229,255,0.35);border-radius:8px;padding:7px 10px;margin-bottom:8px;font-size:11px;color:#00e5ff;font-weight:600">⚡ ${autoStopCount} titik cas Molis otomatis disisipkan di sepanjang rute (estimasi isi ke ${TP_RECHARGE_TARGET_SOC}%).</div>`;
+  }
   if(warnCount>0){
-    html += `<div style="background:rgba(255,61,61,0.1);border:1px solid var(--accent);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--accent);font-weight:600">⚠️ ${warnCount} segmen mungkin kekurangan daya — disarankan isi ulang di SPKLU yang ditandai di bawah</div>`;
+    html += `<div style="background:rgba(255,61,61,0.1);border:1px solid var(--accent);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:var(--accent);font-weight:600">⚠️ ${warnCount} segmen tetap berisiko kurang daya — cek titik cas di sekitar segmen tersebut.</div>`;
   }
 
   html += legs.map((l,i)=>{
     const statusCls = l.enough ? 'tp-leg-ok' : 'tp-leg-warn';
     const statusTxt = l.enough ? `✓ tiba ~${l.socAfter}% SOC` : `⚠️ butuh ~${l.whNeeded.toFixed(0)}Wh, SOC tak cukup`;
     let spkluHtml='';
-    if(l.suggestSpklu){
+    if(l.autoChargeStop){
+      spkluHtml = `<div style="font-size:10.5px;color:#00e5ff;margin-top:3px">🔌 Berhenti cas → target ${l.chargeToSoc}% (±${l.chargeMin} mnt${l.detourKm != null ? ' · deviasi ' + l.detourKm.toFixed(1) + ' km' : ''})</div>`;
+    } else if(l.suggestSpklu){
       const d=(l.suggestSpklu.distToB/1000).toFixed(1);
       spkluHtml = `<div style="font-size:11px;color:#ffa726;margin-top:3px">⚡ Saran isi: ${escapeHtml(l.suggestSpklu.name)} (~${d} km dari ${escapeHtml(l.to)})</div>`;
     }
@@ -24018,10 +24697,6 @@ function renderTripSummary(legs, warnCount){
       </div>
     </div>`;
   }).join('');
-
-  if(!lastChargingResults.length && warnCount>0){
-    html += `<div style="font-size:10px;color:var(--muted);margin-top:8px">💡 Tip: tap tombol ⚡ SPKLU di peta dulu supaya app bisa menyarankan titik isi ulang di sepanjang rute.</div>`;
-  }
 
   document.getElementById('tpSummary').innerHTML = html;
 }

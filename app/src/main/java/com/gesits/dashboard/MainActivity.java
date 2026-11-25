@@ -1052,6 +1052,29 @@ public class MainActivity extends Activity {
             });
         }
 
+        // Buka URL eksternal (WhatsApp wa.me, telepon tel:, peta geo:/https:)
+        @JavascriptInterface
+        public void openUrl(String url) {
+            if (url == null || url.trim().isEmpty()) return;
+            final String u = url.trim();
+            final String low = u.toLowerCase(Locale.US);
+            if (!low.startsWith("https://") && !low.startsWith("http://")
+                    && !low.startsWith("tel:") && !low.startsWith("geo:")
+                    && !low.startsWith("mailto:")) {
+                return;
+            }
+            runOnUiThread(() -> {
+                try {
+                    Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(u));
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(i);
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this,
+                        "Tidak ada aplikasi untuk membuka tautan ini", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
         // Export file
         @JavascriptInterface
         public void exportFile(String filename, String content, String mimeType) {
