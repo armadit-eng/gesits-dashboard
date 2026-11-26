@@ -1953,6 +1953,7 @@ public class MainActivity extends Activity {
         installApk(dest);
     }
 
+    @SuppressWarnings("deprecation")
     private String extractCertSha256Short(PackageInfo pInfo) {
         if (pInfo == null) return "";
         try {
@@ -1961,7 +1962,11 @@ public class MainActivity extends Activity {
                 sigs = pInfo.signingInfo.hasMultipleSigners()
                     ? pInfo.signingInfo.getApkContentsSigners()
                     : pInfo.signingInfo.getSigningCertificateHistory();
-            } else {
+                if (sigs == null || sigs.length == 0) {
+                    sigs = pInfo.signingInfo.getApkContentsSigners();
+                }
+            }
+            if ((sigs == null || sigs.length == 0) && pInfo.signatures != null) {
                 sigs = pInfo.signatures;
             }
             if (sigs == null || sigs.length == 0 || sigs[0] == null) return "";
@@ -1995,40 +2000,47 @@ public class MainActivity extends Activity {
 
     // Buka installer APK sistem lewat FileProvider (wajib content:// di Android 7+)
     // Cek kecocokan signature keystore & versionCode dulu agar user tahu penyebab pasti jika "bentrok".
+    @SuppressWarnings("deprecation")
     private void installApk(File file) {
         lastDownloadedApkFile = file;
         try {
             PackageManager pm = getPackageManager();
             int flags = (Build.VERSION.SDK_INT >= 28)
-                ? PackageManager.GET_SIGNING_CERTIFICATES
+                ? (PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_SIGNATURES)
                 : PackageManager.GET_SIGNATURES;
             PackageInfo installedInfo = pm.getPackageInfo(getPackageName(), flags);
             PackageInfo apkInfo = pm.getPackageArchiveInfo(file.getAbsolutePath(), flags);
-            if (apkInfo != null) {
-                long curVc = (Build.VERSION.SDK_INT >= 28)
-                    ? installedInfo.getLongVersionCode()
-                    : installedInfo.versionCode;
-                long apkVc = (Build.VERSION.SDK_INT >= 28)
-                    ? apkInfo.getLongVersionCode()
-                    : apkInfo.versionCode;
-                String curSig = extractCertSha256Short(installedInfo);
-                String apkSig = extractCertSha256Short(apkInfo);
-                String conflictReason = "";
-                if (!curSig.isEmpty() && !apkSig.isEmpty() && !curSig.equals(apkSig)) {
-                    conflictReason = "SIGNATURE_MISMATCH";
-                } else if (apkVc > 0 && curVc > 0 && apkVc < curVc) {
-                    conflictReason = "DOWNGRADE";
+            if (apkInfo == null) {
+                Toast.makeText(this, "File APK tidak valid atau unduhan belum lengkap. Coba ulangi.", Toast.LENGTH_LONG).show();
+                if (webView != null) {
+                    runOnUiThread(() -> webView.evaluateJavascript(
+                        "window.onApkDownloadFailed && window.onApkDownloadFailed('install')", null));
                 }
-                if (!conflictReason.isEmpty() && webView != null) {
-                    final String js = "window.onApkInstallConflict && window.onApkInstallConflict("
-                        + JSONObject.quote(conflictReason) + ","
-                        + JSONObject.quote(curSig) + ","
-                        + JSONObject.quote(apkSig) + ","
-                        + curVc + ","
-                        + apkVc + ")";
-                    runOnUiThread(() -> webView.evaluateJavascript(js, null));
-                    return;
-                }
+                return;
+            }
+            long curVc = (Build.VERSION.SDK_INT >= 28)
+                ? installedInfo.getLongVersionCode()
+                : installedInfo.versionCode;
+            long apkVc = (Build.VERSION.SDK_INT >= 28)
+                ? apkInfo.getLongVersionCode()
+                : apkInfo.versionCode;
+            String curSig = extractCertSha256Short(installedInfo);
+            String apkSig = extractCertSha256Short(apkInfo);
+            String conflictReason = "";
+            if (!curSig.isEmpty() && !apkSig.isEmpty() && !curSig.equals(apkSig)) {
+                conflictReason = "SIGNATURE_MISMATCH";
+            } else if (apkVc > 0 && curVc > 0 && apkVc < curVc) {
+                conflictReason = "DOWNGRADE";
+            }
+            if (!conflictReason.isEmpty() && webView != null) {
+                final String js = "window.onApkInstallConflict && window.onApkInstallConflict("
+                    + JSONObject.quote(conflictReason) + ","
+                    + JSONObject.quote(curSig) + ","
+                    + JSONObject.quote(apkSig) + ","
+                    + curVc + ","
+                    + apkVc + ")";
+                runOnUiThread(() -> webView.evaluateJavascript(js, null));
+                return;
             }
         } catch (Exception ignored) {}
         launchApkInstallerIntent(file);
