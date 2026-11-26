@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.28",
-  "versionCode": 9,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.28/GesitsDashboard-v1.0.1.28-vc9-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.28",
-  "notes": "- feat: add Fardriver controller BLE support"
+  "version": "1.0.1.29",
+  "versionCode": 10,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.29/GesitsDashboard-v1.0.1.29-vc10-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.29",
+  "notes": "- refactor: improve APK signature extraction logic"
 }
