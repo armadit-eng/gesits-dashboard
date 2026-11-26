@@ -46,23 +46,52 @@ public class BmsBleManager {
 
     private static final String TAG = "GesitsBmsBle";
 
-    // Sama persis dengan JK_SERVICE_UUID/JK_CHAR_NOTIFY_UUID/JK_CHAR_WRITE_UUID
-    // di index.html — kalau salah satu diubah, ubah juga yang satunya.
+    // JK-BMS / Daly / ANT: Service FFE0 -> Notify FFE1, Write FFF2 / FFE2 / FFE1
     private static final UUID JK_SERVICE_UUID =
         UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
-    // FFE1: NOTIFY, READ, WRITE, WRITE_NO_RESPONSE — dipakai buat NOTIFY aja.
     private static final UUID JK_CHAR_NOTIFY_UUID =
         UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
-    // FFF2: WRITE, WRITE_NO_RESPONSE — channel command TERPISAH, ketemu via
-    // inspeksi nRF Connect. Sebelumnya command dikirim ke FFE1 (yg jg support
-    // write scr teknis, makanya gak error), tapi kemungkinan gak diproses
-    // sbg command asli — makanya BMS keliatan cuma balikin frame default.
+    private static final UUID CHAR_FFE2_UUID =
+        UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb");
     private static final UUID JK_CHAR_WRITE_UUID =
         UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
+
+    // Varian Daly / ANT / modul UART alternatif: Service FFF0 -> Notify FFF1, Write FFF2
+    private static final UUID FFF0_SERVICE_UUID =
+        UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
+    private static final UUID CHAR_FFF1_UUID =
+        UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb");
+
+    // JBD / Xiaoxiang BMS: Service FF00 -> Notify FF01, Write FF02
+    private static final UUID JBD_SERVICE_UUID =
+        UUID.fromString("0000ff00-0000-1000-8000-00805f9b34fb");
+    private static final UUID JBD_CHAR_NOTIFY_UUID =
+        UUID.fromString("0000ff01-0000-1000-8000-00805f9b34fb");
+    private static final UUID JBD_CHAR_WRITE_UUID =
+        UUID.fromString("0000ff02-0000-1000-8000-00805f9b34fb");
+
     private static final UUID CCCD_UUID =
         UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
     private static final long SCAN_TIMEOUT_MS = 10000; // auto-stop scan 10 detik
+    private volatile String bmsType = "jk"; // jk | daly | ant | jbd | auto
+
+    public void setBmsType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            this.bmsType = "jk";
+            return;
+        }
+        String t = type.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("jk".equals(t) || "daly".equals(t) || "ant".equals(t) || "jbd".equals(t) || "auto".equals(t)) {
+            this.bmsType = t;
+        } else {
+            this.bmsType = "jk";
+        }
+    }
+
+    public String getBmsType() {
+        return bmsType;
+    }
 
     public interface Callback {
         void onDeviceFound(String name, String mac);
@@ -184,20 +213,45 @@ public class BmsBleManager {
         callback.onScanDone();
     }
 
-    // Perangkat dianggap cocok kalau iklannya memuat service UUID yang dicari ATAU namanya mengandung kata kunci.
+    // Perangkat dianggap cocok kalau iklannya memuat service UUID yang dicari ATAU namanya mengandung kata kunci sesuai tipe BMS.
     private boolean matchesTarget(ScanResult r, BluetoothDevice d) {
         try {
             android.bluetooth.le.ScanRecord rec = r.getScanRecord();
             String n = null;
             if (rec != null) {
                 java.util.List<ParcelUuid> u = rec.getServiceUuids();
-                if (u != null) for (ParcelUuid p : u) if (JK_SERVICE_UUID.equals(p.getUuid())) return true;
+                if (u != null) {
+                    for (ParcelUuid p : u) {
+                        UUID su = p.getUuid();
+                        if ("jbd".equals(bmsType)) {
+                            if (JBD_SERVICE_UUID.equals(su) || JK_SERVICE_UUID.equals(su) || FFF0_SERVICE_UUID.equals(su)) return true;
+                        } else if ("daly".equals(bmsType) || "ant".equals(bmsType)) {
+                            if (JK_SERVICE_UUID.equals(su) || FFF0_SERVICE_UUID.equals(su) || JBD_SERVICE_UUID.equals(su)) return true;
+                        } else if ("auto".equals(bmsType)) {
+                            if (JK_SERVICE_UUID.equals(su) || FFF0_SERVICE_UUID.equals(su) || JBD_SERVICE_UUID.equals(su)) return true;
+                        } else {
+                            if (JK_SERVICE_UUID.equals(su)) return true;
+                        }
+                    }
+                }
                 n = rec.getDeviceName();
             }
             if (n == null) { try { n = d.getName(); } catch (SecurityException e) { n = null; } }
             if (n != null) {
                 String l = n.toLowerCase(java.util.Locale.ROOT);
-                for (String k : new String[]{"jk", "bms"}) if (l.contains(k)) return true;
+                String[] keys;
+                if ("daly".equals(bmsType)) {
+                    keys = new String[]{"dl-", "daly", "bms"};
+                } else if ("ant".equals(bmsType)) {
+                    keys = new String[]{"ant", "bms"};
+                } else if ("jbd".equals(bmsType)) {
+                    keys = new String[]{"jbd", "xiaoxiang", "bms", "sp", "lh-"};
+                } else if ("auto".equals(bmsType)) {
+                    keys = new String[]{"jk", "daly", "dl-", "ant", "jbd", "xiaoxiang", "bms"};
+                } else {
+                    keys = new String[]{"jk", "bms"};
+                }
+                for (String k : keys) if (l.contains(k)) return true;
             }
         } catch (Exception ignored) {}
         return false;
@@ -216,7 +270,7 @@ public class BmsBleManager {
             String name;
             try { name = device.getName(); } catch (SecurityException e) { name = null; }
             if (name == null && result.getScanRecord() != null) name = result.getScanRecord().getDeviceName();
-            if (name == null) name = "BMS Jikong";
+            if (name == null) name = "BMS (" + bmsType.toUpperCase(java.util.Locale.ROOT) + ")";
 
             callback.onDeviceFound(name, mac);
         }
@@ -331,7 +385,12 @@ public class BmsBleManager {
             writeInFlight = true;
         }
         try {
-            ch.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+            int props = ch.getProperties();
+            if ((props & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0) {
+                ch.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);
+            } else {
+                ch.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+            }
             ch.setValue(payload);
             boolean started = g.writeCharacteristic(ch);
             if (!started) {
@@ -574,33 +633,66 @@ public class BmsBleManager {
                 return;
             }
 
-            // PENTING: device ini mendeklarasikan service FFE0 DUA KALI
-            // (ketemu via nRF Connect — 2 entri "Unknown Service UUID 0xFFE0").
-            // Characteristic FFF2/FFE1 cuma ada di instance KEDUA.
-            // g.getService(uuid) cuma ambil match PERTAMA, jadi kalau itu yg
-            // kosong kita bakal gagal nemuin characteristic-nya. Makanya di
-            // sini kita iterate SEMUA service yg UUID-nya cocok, bukan cuma
-            // ambil satu.
             notifyChar = null;
             writeChar  = null;
-            for (BluetoothGattService svc : g.getServices()) {
-                if (!JK_SERVICE_UUID.equals(svc.getUuid())) continue;
-                if (notifyChar == null) notifyChar = svc.getCharacteristic(JK_CHAR_NOTIFY_UUID);
-                if (writeChar  == null) writeChar  = svc.getCharacteristic(JK_CHAR_WRITE_UUID);
-                if (notifyChar != null && writeChar != null) break;
+            if ("jbd".equals(bmsType)) {
+                for (BluetoothGattService svc : g.getServices()) {
+                    if (!JBD_SERVICE_UUID.equals(svc.getUuid())) continue;
+                    if (notifyChar == null) notifyChar = svc.getCharacteristic(JBD_CHAR_NOTIFY_UUID);
+                    if (writeChar  == null) writeChar  = svc.getCharacteristic(JBD_CHAR_WRITE_UUID);
+                    if (notifyChar != null && writeChar != null) break;
+                }
+            }
+            if (notifyChar == null && ("daly".equals(bmsType) || "ant".equals(bmsType) || "auto".equals(bmsType))) {
+                for (BluetoothGattService svc : g.getServices()) {
+                    if (!JK_SERVICE_UUID.equals(svc.getUuid())) continue;
+                    if (notifyChar == null) notifyChar = svc.getCharacteristic(JK_CHAR_NOTIFY_UUID);
+                    if (writeChar == null) {
+                        BluetoothGattCharacteristic w2 = svc.getCharacteristic(CHAR_FFE2_UUID);
+                        if (w2 != null) writeChar = w2;
+                    }
+                    if (writeChar == null) {
+                        BluetoothGattCharacteristic wf = svc.getCharacteristic(JK_CHAR_WRITE_UUID);
+                        if (wf != null) writeChar = wf;
+                    }
+                    if (notifyChar != null && writeChar != null) break;
+                }
+                if (notifyChar == null) {
+                    for (BluetoothGattService svc : g.getServices()) {
+                        if (!FFF0_SERVICE_UUID.equals(svc.getUuid())) continue;
+                        if (notifyChar == null) notifyChar = svc.getCharacteristic(CHAR_FFF1_UUID);
+                        if (writeChar  == null) writeChar  = svc.getCharacteristic(JK_CHAR_WRITE_UUID);
+                        if (notifyChar != null && writeChar != null) break;
+                    }
+                }
+                if (notifyChar == null) {
+                    for (BluetoothGattService svc : g.getServices()) {
+                        if (!JBD_SERVICE_UUID.equals(svc.getUuid())) continue;
+                        if (notifyChar == null) notifyChar = svc.getCharacteristic(JBD_CHAR_NOTIFY_UUID);
+                        if (writeChar  == null) writeChar  = svc.getCharacteristic(JBD_CHAR_WRITE_UUID);
+                        if (notifyChar != null && writeChar != null) break;
+                    }
+                }
+            }
+            // JK-BMS (dan fallback FFE0 multi-instance)
+            if (notifyChar == null) {
+                for (BluetoothGattService svc : g.getServices()) {
+                    if (!JK_SERVICE_UUID.equals(svc.getUuid())) continue;
+                    if (notifyChar == null) notifyChar = svc.getCharacteristic(JK_CHAR_NOTIFY_UUID);
+                    if (writeChar  == null) writeChar  = svc.getCharacteristic(JK_CHAR_WRITE_UUID);
+                    if (notifyChar != null && writeChar != null) break;
+                }
             }
 
             if (notifyChar == null) {
-                Log.e(TAG, "Characteristic FFE1 (notify) tidak ditemukan di service manapun");
-                callback.onLog("BMS: characteristic FFE1 gak ketemu di service FFE0 manapun");
+                Log.e(TAG, "Characteristic notify BMS tidak ditemukan di service manapun");
+                callback.onLog("BMS: characteristic notify gak ketemu (tipe=" + bmsType + ")");
                 failSetup();
                 return;
             }
             if (writeChar == null) {
-                // Fallback: kalau FFF2 beneran gak ada, coba tetep pakai FFE1
-                // buat write (device lama mungkin cuma punya 1 characteristic).
-                Log.w(TAG, "Characteristic FFF2 (write) tidak ditemukan — fallback pakai FFE1 utk write juga");
-                callback.onLog("BMS: FFF2 gak ketemu, fallback command lewat FFE1");
+                // Fallback: coba pakai notifyChar untuk write (umum di modul FFE1 single-char Daly/ANT)
+                Log.w(TAG, "Characteristic write terpisah tidak ditemukan — fallback pakai notifyChar");
                 writeChar = notifyChar;
             }
 

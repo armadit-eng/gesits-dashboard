@@ -3439,7 +3439,7 @@ function motoImgFallback(img){
     <!-- Section BMS Jikong — data langsung dari BMS (lebih akurat drpd estimasi
          motor), disembunyikan otomatis kalau belum di-pair -->
     <div id="bmsPanel" style="display:none">
-      <div class="batt-section-title"><span style="display:inline-flex;width:12px;height:12px;color:#29b6f6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10a1 1 0 0 1 1 1v3a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V9a1 1 0 0 1 1-1z"/><path d="M12 18v4"/></svg></span>Data BMS Jikong <span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:none">(sumber terpisah dari motor)</span><span id="bmsConnectionStatus" style="float:right;font-size:9px;font-weight:800;letter-spacing:.4px">○ OFFLINE</span></div>
+      <div class="batt-section-title"><span style="display:inline-flex;width:12px;height:12px;color:#29b6f6"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10a1 1 0 0 1 1 1v3a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V9a1 1 0 0 1 1-1z"/><path d="M12 18v4"/></svg></span><span id="bmsPanelTitle">Data BMS Jikong</span> <span style="font-size:9px;color:var(--muted);font-weight:600;text-transform:none">(sumber terpisah dari motor)</span><span id="bmsConnectionStatus" style="float:right;font-size:9px;font-weight:800;letter-spacing:.4px">○ OFFLINE</span></div>
       <div class="batt-grid">
         <div class="batt-card">
           <div class="batt-icon" style="background:rgba(255,238,88,.14);color:#ffee58""><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="3" x2="12" y2="21"/><path d="M5 8l-3 6a3 3 0 0 0 6 0z"/><path d="M19 8l-3 6a3 3 0 0 0 6 0z"/><path d="M5 8h14"/><path d="M9 3h6"/></svg></div>
@@ -4714,7 +4714,7 @@ function motoImgFallback(img){
     <div class="akun-grid cols-3">
       <div class="akun-card" onclick="openBmsPairModal()">
         <div class="akun-card-ico" style="background:rgba(var(--green-rgb),.14);color:var(--green)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg></div>
-        <div><div class="akun-card-title">Pair BMS Jikong</div><div class="akun-card-sub" id="bmsMenuSub">Kelola koneksi BMS baterai motor</div></div>
+        <div><div class="akun-card-title" id="bmsMenuTitle">Pair BMS</div><div class="akun-card-sub" id="bmsMenuSub">JK-BMS / Daly / ANT / JBD</div></div>
         <div class="akun-card-chev">›</div>
       </div>
       <div class="akun-card" onclick="openMaintenanceModal()">
@@ -5523,19 +5523,43 @@ function statsSvgIcon(name){
      yg cuma list device ke-pair, ini scan BLE aktif krn BMS gak perlu pairing) -->
 <div class="modal-overlay" id="bmsScanModal">
   <div class="modal">
-    <h3>🔌 Cari BMS Jikong (BLE)</h3>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Pastikan BMS Jikong menyala &amp; dalam jangkauan. Gak perlu pairing manual di Settings — cukup pilih dari daftar di bawah.</p>
+    <h3 id="bmsScanModalTitle">🔌 Cari BMS (BLE)</h3>
+    <p id="bmsScanModalDesc" style="font-size:12px;color:var(--muted);margin-bottom:12px">Pastikan BMS menyala &amp; dalam jangkauan. Gak perlu pairing manual di Settings — cukup pilih dari daftar di bawah.</p>
     <div id="bmsScanStatus" style="text-align:center;padding:12px;font-size:13px;color:var(--muted)">
       <span class="spin" style="font-size:20px">↻</span><br>Mencari perangkat BLE...
     </div>
     <div id="bmsDeviceList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
     <div id="bmsScanEmpty" style="display:none;text-align:center;padding:16px;font-size:13px;color:var(--muted)">
-      😔 Belum ada BMS Jikong yang ketemu.<br><br>
-      <span style="font-size:11px">Pastikan BMS menyala & Bluetooth HP aktif.</span>
+      😔 <span id="bmsScanEmptyLabel">Belum ada BMS yang ketemu.</span><br><br>
+      <span style="font-size:11px">Pastikan jenis BMS sudah sesuai, BMS menyala &amp; Bluetooth HP aktif.</span>
     </div>
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick="closeModal('bmsScanModal')">BATAL</button>
       <button class="modal-btn" onclick="bmsStartNativeScan()" style="color:var(--green)">🔄 REFRESH</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Scan device BLE Fardriver Controller (native) -->
+<div class="modal-overlay" id="fardriverScanModal">
+  <div class="modal">
+    <h3>🎛️ Cari Kontroler Fardriver (BLE)</h3>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Pastikan dongle BLE Fardriver menyala &amp; dalam jangkauan (FF00/FFE0).</p>
+    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="fdScanAllToggle" onchange="fardriverStartNativeScan()" style="width:16px;height:16px">
+      <span>Tampilkan semua BLE (jika nama dongle umum)</span>
+    </label>
+    <div id="fardriverScanStatus" style="text-align:center;padding:12px;font-size:13px;color:var(--muted)">
+      <span class="spin" style="font-size:20px">↻</span><br>Mencari dongle BLE...
+    </div>
+    <div id="fardriverDeviceList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
+    <div id="fardriverScanEmpty" style="display:none;text-align:center;padding:16px;font-size:13px;color:var(--muted)">
+      😔 Belum ada kontroler Fardriver yang ketemu.<br><br>
+      <span style="font-size:11px">Centang "Tampilkan semua BLE" di atas kalau nama dongle tidak mengandung Fardriver.</span>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeModal('fardriverScanModal')">BATAL</button>
+      <button class="modal-btn" onclick="fardriverStartNativeScan()" style="color:var(--green)">🔄 REFRESH</button>
     </div>
   </div>
 </div>
@@ -5554,15 +5578,15 @@ function statsSvgIcon(name){
 
 <!-- MODAL: PUSAT KONEKSI — semua koneksi independen & bisa aktif bersamaan -->
 <div class="modal-overlay" id="connectChooserModal">
-  <div class="modal">
+  <div class="modal" style="max-height:85vh;overflow-y:auto">
     <h3>🔗 Koneksi Perangkat</h3>
-    <p style="font-size:12px">Kelola Motor, BMS Jikong, dan ESP32 secara terpisah. Koneksi yang sudah aktif <b>tidak perlu diputus</b> untuk menyambungkan perangkat lain.</p>
+    <p style="font-size:12px">Kelola Motor, Kontroler Fardriver, BMS (Jikong/Daly/ANT/JBD), dan ESP32 secara terpisah. Koneksi yang aktif <b>tidak perlu diputus</b> saat menyambungkan perangkat lain.</p>
     <div style="display:flex;flex-direction:column;gap:10px;margin:12px 0">
       <div onclick="chooseConnectMotor()" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
         <div style="font-size:26px;flex-shrink:0">🏍️</div>
         <div style="flex:1;min-width:0;text-align:left">
-          <div style="font-size:14px;font-weight:700;color:var(--text)">Motor GESITS</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:1px">Bluetooth Classic (RFCOMM)</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text)">Motor GESITS (MID)</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Bluetooth Classic (RFCOMM) · AT+MID</div>
           <div style="font-size:11px;font-weight:600;margin-top:3px" id="connChooserMotorSub">⚪ Belum terhubung</div>
         </div>
         <div style="font-size:18px;color:var(--muted)">›</div>
@@ -5576,11 +5600,20 @@ function statsSvgIcon(name){
         </div>
         <div style="font-size:18px;color:var(--muted)">›</div>
       </div>
+      <div onclick="chooseConnectFardriver()" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
+        <div style="font-size:26px;flex-shrink:0">🎛️</div>
+        <div style="flex:1;min-width:0;text-align:left">
+          <div style="font-size:14px;font-weight:700;color:var(--text)">Kontroler Fardriver</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Bluetooth LE (FF00/FFE0) · RPM, V/A, Suhu, Throttle</div>
+          <div style="font-size:11px;font-weight:600;margin-top:3px" id="connChooserFdSub">⚪ Belum terhubung</div>
+        </div>
+        <div style="font-size:18px;color:var(--muted)">›</div>
+      </div>
       <div onclick="chooseConnectBms()" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer">
         <div style="font-size:26px;flex-shrink:0">🔌</div>
         <div style="flex:1;min-width:0;text-align:left">
-          <div style="font-size:14px;font-weight:700;color:var(--text)">BMS Jikong</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:1px">Bluetooth LE (GATT)</div>
+          <div style="font-size:14px;font-weight:700;color:var(--text)" id="connChooserBmsTitle">BMS Jikong / Daly / ANT / JBD</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:1px">Bluetooth LE (GATT) · pilih jenis BMS</div>
           <div style="font-size:11px;font-weight:600;margin-top:3px" id="connChooserBmsSub">⚪ Belum terhubung</div>
         </div>
         <div style="font-size:18px;color:var(--muted)">›</div>
@@ -5600,10 +5633,45 @@ function statsSvgIcon(name){
     </div>
   </div>
 </div>
+
+<!-- MODAL: PAIR FARDRIVER CONTROLLER -->
+<div class="modal-overlay" id="fardriverPairModal">
+  <div class="modal" style="max-height:78vh;overflow-y:auto">
+    <h3>🎛️ Kontroler Fardriver (BLE)</h3>
+    <p style="font-size:12px">Baca telemetri langsung dari dongle BLE Fardriver (RPM → km/jam, voltase, arus, suhu controller &amp; motor, throttle, mode gear) dan terhubung ke speedometer &amp; trip tracker.</p>
+    <div id="fardriverPairStatus" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px">
+      <span id="fardriverPairStatusDot">⚪</span>
+      <span id="fardriverPairStatusText">Belum terhubung</span>
+    </div>
+    <div id="fardriverCalibBadge" style="background:rgba(41,182,246,.08);border:1px solid rgba(41,182,246,.22);border-radius:10px;padding:10px;margin-bottom:10px;font-size:11px;color:var(--muted);line-height:1.45">
+      ⚙️ Kalibrasi kecepatan: <b id="fdCalibSummary" style="color:var(--text)">Rasio 1.0 · Ban 1450 mm</b>
+    </div>
+    <div id="fardriverPairUnsupported" style="display:none;font-size:12px;color:var(--warning);background:rgba(255,193,7,.08);border:1px solid rgba(255,193,7,.25);border-radius:10px;padding:10px;margin-bottom:10px">
+      ⚠️ Browser/WebView ini belum dukung Web Bluetooth. Buka pakai Chrome for Android versi terbaru atau gunakan aplikasi Android.
+    </div>
+    <div class="modal-actions" style="flex-direction:column;gap:8px">
+      <button class="modal-btn" id="fardriverScanBtn" onclick="fardriverConnect()">🔍 Cari &amp; Sambungkan Fardriver</button>
+      <button class="modal-btn cancel" id="fardriverDisconnectBtn" onclick="fardriverDisconnect()" style="display:none">Putuskan Koneksi</button>
+      <button class="modal-btn cancel" id="fardriverForgetBtn" onclick="forgetFardriver()" style="display:none;color:var(--danger);font-size:12px">🗑️ Lupakan Fardriver (stop auto-reconnect)</button>
+      <button class="modal-btn cancel" onclick="closeModal('fardriverPairModal');openSettings()" style="color:var(--green);border-color:rgba(var(--green-rgb),.35)">⚙️ Atur Rasio Gear &amp; Ukuran Ban</button>
+      <button class="modal-btn cancel" onclick="closeModal('fardriverPairModal');showDevLog()" style="color:#29b6f6;border-color:#29b6f6">📋 Lihat Log Mentah (debug)</button>
+      <button class="modal-btn cancel" onclick="closeModal('fardriverPairModal')">TUTUP</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="bmsPairModal">
-  <div class="modal" style="max-height:75vh;overflow-y:auto">
-    <h3><span style="display:inline-flex;width:15px;height:15px;vertical-align:-3px;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10a1 1 0 0 1 1 1v3a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V9a1 1 0 0 1 1-1z"/><path d="M12 18v4"/></svg></span>Pair BMS Jikong</h3>
-    <p style="font-size:12px">Koneksi ini terpisah dari koneksi ke motor. BMS dipakai buat data baterai yang lebih akurat: voltase per-cell, Delta Sel, SOC/SOH asli dari BMS.</p>
+  <div class="modal" style="max-height:80vh;overflow-y:auto">
+    <h3><span style="display:inline-flex;width:15px;height:15px;vertical-align:-3px;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M7 8h10a1 1 0 0 1 1 1v3a6 6 0 0 1-6 6h0a6 6 0 0 1-6-6V9a1 1 0 0 1 1-1z"/><path d="M12 18v4"/></svg></span><span id="bmsPairModalTitle">Pair BMS</span></h3>
+    <p style="font-size:12px">Pilih jenis BMS terlebih dahulu sebelum scan agar filter BLE &amp; protokol pembacaan sesuai dengan baterai Anda.</p>
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:8px 0 6px">Jenis / Protokol BMS</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px" id="bmsProtoBtns">
+      <button type="button" class="preset-btn" data-bms="jk" onclick="setBmsProtocolType('jk')">⚡ JK-BMS (Jikong)</button>
+      <button type="button" class="preset-btn" data-bms="daly" onclick="setBmsProtocolType('daly')">🔋 Daly Smart BMS</button>
+      <button type="button" class="preset-btn" data-bms="ant" onclick="setBmsProtocolType('ant')">🐜 ANT BMS</button>
+      <button type="button" class="preset-btn" data-bms="jbd" onclick="setBmsProtocolType('jbd')">📟 JBD / Xiaoxiang</button>
+    </div>
+    <div id="bmsProtoHint" class="uuid-tip" style="margin-bottom:8px"></div>
     <div id="bmsPairStatus" style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px">
       <span id="bmsPairStatusDot">⚪</span>
       <span id="bmsPairStatusText">Belum terhubung</span>
@@ -6143,6 +6211,41 @@ function statsSvgIcon(name){
     <div class="uuid-field">
       <label>UUID Characteristic (notify + write)</label>
       <input id="inMotorLeCharUuid" type="text" placeholder="0000fff2-0000-1000-8000-00805f9b34fb">
+    </div>
+    <hr class="modal-sep">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px">🎛️ Kontroler Motor &amp; Protokol BMS</div>
+    <div class="uuid-field">
+      <label>Kontroler Utama</label>
+      <select id="inControllerType" onchange="toggleFardriverSettingsFields(this.value)" style="width:100%">
+        <option value="gesits">GESITS Standar (MID Classic / LE)</option>
+        <option value="fardriver">Fardriver Controller (BLE Dongle)</option>
+      </select>
+    </div>
+    <div id="fdSettingsWrap">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="uuid-field"><label>Rasio Gear</label><input id="inFdGearRatio" type="number" step="0.05" min="0.1" max="20" inputmode="decimal" placeholder="1.0"></div>
+        <div class="uuid-field"><label>Ban (mm)</label><input id="inFdWheelCirc" type="number" step="10" min="500" max="3000" inputmode="numeric" placeholder="1450"></div>
+        <div class="uuid-field"><label>Pembagi RPM</label><input id="inFdRpmDivisor" type="number" step="1" min="1" max="64" inputmode="numeric" placeholder="1"></div>
+      </div>
+      <div class="preset-row" style="margin-bottom:8px">
+        <button type="button" class="preset-btn" onclick="document.getElementById('inFdWheelCirc').value=1360">Ring 12" (1360)</button>
+        <button type="button" class="preset-btn" onclick="document.getElementById('inFdWheelCirc').value=1450">Ring 14" (1450)</button>
+        <button type="button" class="preset-btn" onclick="document.getElementById('inFdWheelCirc').value=1720">Ring 17" (1720)</button>
+      </div>
+      <div class="uuid-field" style="display:flex;align-items:center;gap:10px">
+        <input id="inFdInvertCurrent" type="checkbox" style="width:18px;height:18px;flex:none">
+        <label style="margin:0">Balik arah arus Fardriver (+ ↔ -)</label>
+      </div>
+      <div class="uuid-tip">💡 Hub drive langsung pakai Rasio Gear <b>1.0</b>; motor mid-drive pakai rasio transmisi (mis. 2.8). Jika Fardriver mengirim eRPM, isi Pembagi RPM sesuai jumlah pole pairs.</div>
+    </div>
+    <div class="uuid-field" style="margin-top:8px">
+      <label>Jenis / Protokol BMS</label>
+      <select id="inBmsProtoType" style="width:100%">
+        <option value="jk">JK-BMS (Jikong BLE)</option>
+        <option value="daly">Daly Smart BMS (BLE)</option>
+        <option value="ant">ANT BMS (BLE)</option>
+        <option value="jbd">JBD / Xiaoxiang BMS (BLE)</option>
+      </select>
     </div>
     <div class="modal-actions settings-actions">
       <button class="modal-btn cancel" onclick="closeModal('settingsModal')">BATAL</button>
@@ -7241,22 +7344,37 @@ if(!IS_NATIVE_ANDROID){
 // baru (requestDevice() wajib dipicu klik user tiap kali).
 if(IS_NATIVE_ANDROID){
   document.addEventListener('DOMContentLoaded', ()=>{
+    try{ if(Android.bmsSetType) Android.bmsSetType(_bmsProtocolType); }catch(e){}
+    _bmsApplyProtoLabels();
     const savedMac  = localStorage.getItem('bms_last_mac');
-    const savedName = localStorage.getItem('bms_last_name') || 'BMS Jikong';
-    if(!savedMac) return;
-    // Delay beberapa detik — kasih waktu bridge Android & motor punya
-    // kesempatan auto-connect duluan (biar gak rebutan resource BLE pas
-    // app baru boot), baru BMS nyusul nyoba nyambung sendiri.
-    setTimeout(()=>{
-      if(bmsData.connected) return; // udah kesambung manual duluan
-      log('BMS: coba auto-reconnect ke device terakhir ('+savedName+')...','sys');
-      _bmsLastMac = savedMac;
-      _bmsLastName = savedName;
-      _bmsFrameLogCount = 0;
-      try{ Android.bmsConnectMac(savedMac); }
-      catch(e){ log('BMS: auto-reconnect gagal dipanggil — '+e.message,'err'); }
-    }, 4000);
+    const savedName = localStorage.getItem('bms_last_name') || _getBmsProtoMeta().short;
+    if(savedMac){
+      setTimeout(()=>{
+        if(bmsData.connected) return;
+        log('BMS ('+_getBmsProtoMeta().badge+'): coba auto-reconnect ke '+savedName+'...','sys');
+        _bmsLastMac = savedMac;
+        _bmsLastName = savedName;
+        _bmsFrameLogCount = 0;
+        try{ if(Android.bmsSetType) Android.bmsSetType(_bmsProtocolType); Android.bmsConnectMac(savedMac); }
+        catch(e){ log('BMS: auto-reconnect gagal dipanggil — '+e.message,'err'); }
+      }, 4000);
+    }
+    const fdSavedMac = localStorage.getItem('fardriver_last_mac');
+    const fdSavedName = localStorage.getItem('fardriver_last_name') || 'Fardriver';
+    if(fdSavedMac){
+      setTimeout(()=>{
+        if(fardriverData.connected) return;
+        log('Fardriver: coba auto-reconnect ke '+fdSavedName+'...','sys');
+        _fdLastMac = fdSavedMac;
+        _fdLastName = fdSavedName;
+        _fdFrameLogCount = 0;
+        try{ Android.fardriverConnectMac(fdSavedMac); }
+        catch(e){ log('Fardriver: auto-reconnect gagal — '+e.message,'err'); }
+      }, 5200);
+    }
   });
+} else {
+  document.addEventListener('DOMContentLoaded', ()=>{ try{ _bmsApplyProtoLabels(); }catch(e){} });
 }
 
 // Default UUID LE motor GESITS — dikonfirmasi via nRF Connect (device
@@ -8103,13 +8221,46 @@ function getFreshTmot(){
 // resmi Jikong — offset bisa geser dikit tergantung varian HW.
 // ═══════════════════════════════════════════════════════════
 const JK_SERVICE_UUID   = '0000ffe0-0000-1000-8000-00805f9b34fb';
-const JK_CHAR_NOTIFY_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb'; // NOTIFY, READ, WRITE, WRITE_NO_RSP
-const JK_CHAR_WRITE_UUID  = '0000fff2-0000-1000-8000-00805f9b34fb'; // WRITE, WRITE_NO_RSP — channel command terpisah
-                                                                     // (ketemu via nRF Connect — sebelumnya kita
-                                                                     // kirim command ke FFE1 yg kemungkinan cuma
-                                                                     // buat notify, bukan intake command asli)
-const JK_CMD_GET_DEVICE_INFO = 0x97; // handshake WAJIB dikirim sekali stlh notify aktif
-const JK_CMD_GET_CELL_INFO = 0x96; // register "0x96" utk minta frame Cell Info (type 0x02)
+const JK_CHAR_NOTIFY_UUID = '0000ffe1-0000-1000-8000-00805f9b34fb';
+const CHAR_FFE2_UUID      = '0000ffe2-0000-1000-8000-00805f9b34fb';
+const JK_CHAR_WRITE_UUID  = '0000fff2-0000-1000-8000-00805f9b34fb';
+const FFF0_SERVICE_UUID   = '0000fff0-0000-1000-8000-00805f9b34fb';
+const CHAR_FFF1_UUID      = '0000fff1-0000-1000-8000-00805f9b34fb';
+const JBD_SERVICE_UUID    = '0000ff00-0000-1000-8000-00805f9b34fb';
+const JBD_CHAR_NOTIFY_UUID= '0000ff01-0000-1000-8000-00805f9b34fb';
+const JBD_CHAR_WRITE_UUID = '0000ff02-0000-1000-8000-00805f9b34fb';
+const FD_SERVICE_FF00     = '0000ff00-0000-1000-8000-00805f9b34fb';
+const FD_CHAR_FF01        = '0000ff01-0000-1000-8000-00805f9b34fb';
+const FD_CHAR_FF02        = '0000ff02-0000-1000-8000-00805f9b34fb';
+const FD_SERVICE_FFE0     = '0000ffe0-0000-1000-8000-00805f9b34fb';
+const FD_CHAR_FFE1        = '0000ffe1-0000-1000-8000-00805f9b34fb';
+
+const JK_CMD_GET_DEVICE_INFO = 0x97;
+const JK_CMD_GET_CELL_INFO = 0x96;
+
+const BMS_PROTO_META = {
+  jk:   { id:'jk',   label:'JK-BMS (Jikong)',   short:'BMS Jikong', badge:'Jikong', hint:'⚡ Protokol biner 300B (service FFE0 · notify FFE1 · write FFF2). Mendukung 8S–32S cell, SOH, siklus & status balancer.' },
+  daly: { id:'daly', label:'Daly Smart BMS',    short:'BMS Daly',   badge:'Daly',   hint:'🔋 Protokol 13-byte 0xA5 (service FFE0/FFF0). Polling otomatis perintah 0x90–0x95 untuk pack, suhu & voltase per-cell.' },
+  ant:  { id:'ant',  label:'ANT BMS',           short:'BMS ANT',    badge:'ANT',    hint:'🐜 Mendukung protokol ANT BLE terbaru (7E A1) maupun legacy 140-byte (AA 55 AA FF) pada service FFE0/FFF0.' },
+  jbd:  { id:'jbd',  label:'JBD / Xiaoxiang',   short:'BMS JBD',    badge:'JBD',    hint:'📟 Protokol Xiaoxiang DD A5 (service FF00 · notify FF01 · write FF02) untuk pack, suhu NTC & voltase per-cell.' }
+};
+let _bmsProtocolType = localStorage.getItem('bms_protocol_type') || 'jk';
+if(!BMS_PROTO_META[_bmsProtocolType]) _bmsProtocolType = 'jk';
+function _getBmsProtoMeta(){ return BMS_PROTO_META[_bmsProtocolType] || BMS_PROTO_META.jk; }
+
+let CONTROLLER_TYPE = localStorage.getItem('controller_type') || 'gesits';
+if(CONTROLLER_TYPE !== 'gesits' && CONTROLLER_TYPE !== 'fardriver') CONTROLLER_TYPE = 'gesits';
+const FD_CONFIG = {
+  gearRatio:     Math.max(0.1, parseFloat(localStorage.getItem('fd_gear_ratio')) || 1.0),
+  wheelCircMm:   Math.max(500, parseFloat(localStorage.getItem('fd_wheel_circ_mm')) || 1450),
+  rpmDivisor:    Math.max(1, parseInt(localStorage.getItem('fd_rpm_divisor'), 10) || 1),
+  invertCurrent: localStorage.getItem('fd_invert_current') === '1'
+};
+const fardriverData = {
+  connected:false, deviceName:'', lastRxAt:0, connectionState:'offline',
+  rpm:0, spd:0, vbat:null, ibat:null, tinv:null, tmot:null, throttle:0,
+  parkState:null, driveMode:null, errMask:0
+};
 
 const bmsData = {
   connected:false, deviceName:'', cells:[], deltaCellV:null,
@@ -13088,10 +13239,53 @@ function hideDevLog(){
 // pairing bakal nampilin pesan "belum didukung" (lihat bmsConnect()).
 // ══════════════════════════════════════════════════════════════
 
+function _bmsApplyProtoLabels(){
+  const m = _getBmsProtoMeta();
+  const title = document.getElementById('bmsPairModalTitle');
+  if(title) title.textContent = 'Pair ' + m.short;
+  const scanTitle = document.getElementById('bmsScanModalTitle');
+  if(scanTitle) scanTitle.textContent = '🔌 Cari ' + m.short + ' (BLE)';
+  const emptyLbl = document.getElementById('bmsScanEmptyLabel');
+  if(emptyLbl) emptyLbl.textContent = 'Belum ada ' + m.short + ' yang ketemu.';
+  const panelTitle = document.getElementById('bmsPanelTitle');
+  if(panelTitle) panelTitle.textContent = 'Data ' + m.short;
+  const menuTitle = document.getElementById('bmsMenuTitle');
+  if(menuTitle) menuTitle.textContent = 'Pair ' + m.short;
+  const chooserTitle = document.getElementById('connChooserBmsTitle');
+  if(chooserTitle) chooserTitle.textContent = m.short + ' (Ganti Jenis)';
+  const hint = document.getElementById('bmsProtoHint');
+  if(hint) hint.textContent = m.hint;
+  document.querySelectorAll('#bmsProtoBtns [data-bms]').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.bms === _bmsProtocolType);
+  });
+}
+
+function setBmsProtocolType(type){
+  if(!BMS_PROTO_META[type]) type = 'jk';
+  const changed = _bmsProtocolType !== type;
+  _bmsProtocolType = type;
+  localStorage.setItem('bms_protocol_type', type);
+  if(IS_NATIVE_ANDROID){
+    try{ if(Android.bmsSetType) Android.bmsSetType(type); }catch(e){}
+  }
+  _bmsRxBuf = new Uint8Array(0);
+  _dalyCellsBuf = [];
+  _dalyCellCount = 0;
+  _bmsApplyProtoLabels();
+  _bmsUpdatePairUI();
+  renderConnStrip();
+  renderBmsPanel();
+  if(changed){
+    log('BMS: protokol diubah ke ' + _getBmsProtoMeta().label, 'sys');
+    if(bmsData.connected) _bmsStartProtocolSession();
+  }
+}
+
 function openBmsPairModal(){
   document.getElementById('bmsPairModal').classList.add('show');
   document.getElementById('bmsPairUnsupported').style.display =
     (IS_NATIVE_ANDROID || navigator.bluetooth) ? 'none' : 'block';
+  _bmsApplyProtoLabels();
   _bmsUpdatePairUI();
 }
 
@@ -13102,46 +13296,50 @@ function _bmsUpdatePairUI(){
   const discBtn = document.getElementById('bmsDisconnectBtn');
   const forgetBtn = document.getElementById('bmsForgetBtn');
   const menuSub  = document.getElementById('bmsMenuSub');
+  const protoShort = _getBmsProtoMeta().short;
   updateCombinedConnBadge();
   if(forgetBtn) forgetBtn.style.display = (IS_NATIVE_ANDROID && localStorage.getItem('bms_last_mac')) ? 'block' : 'none';
   if(bmsData.connected){
     if(dot) dot.textContent='🟢';
-    if(text) text.textContent='Terhubung ke '+(bmsData.deviceName||'BMS Jikong');
+    if(text) text.textContent='Terhubung ke '+(bmsData.deviceName||protoShort)+' ('+_getBmsProtoMeta().badge+')';
     if(scanBtn) scanBtn.style.display='none';
     if(discBtn) discBtn.style.display='block';
     if(menuSub) menuSub.textContent='🟢 '+(bmsData.deviceName||'Terhubung');
   } else {
     if(dot) dot.textContent='⚪';
-    if(text) text.textContent='Belum terhubung';
+    if(text) text.textContent='Belum terhubung · ' + _getBmsProtoMeta().label;
     if(scanBtn) scanBtn.style.display='block';
     if(discBtn) discBtn.style.display='none';
-    if(menuSub) menuSub.textContent='⚪ Belum terhubung';
+    if(menuSub) menuSub.textContent='⚪ '+protoShort+' · Belum terhubung';
   }
 }
 
 async function bmsConnect(){
-  // Reset counter log diagnostik tiap mulai koneksi baru — sebelumnya counter
-  // ini numpuk terus lintas sesi connect/disconnect (gak pernah direset),
-  // jadi budget log abis duluan sblm kelihatan apa2 di percobaan berikutnya.
   _bmsFrameLogCount = 0;
-  // ── MODE ANDROID NATIVE ── (BLE GATT lewat bridge Java, terpisah dari
-  // Bluetooth Classic yg dipakai buat motor — lihat BmsBleManager.java)
   if(IS_NATIVE_ANDROID){
+    try{ if(Android.bmsSetType) Android.bmsSetType(_bmsProtocolType); }catch(e){}
     closeModal('bmsPairModal');
     bmsStartNativeScan();
     return;
   }
-  // ── MODE WEB (Web Bluetooth) ──
   if(!navigator.bluetooth){
     document.getElementById('bmsPairUnsupported').style.display='block';
     return;
   }
   try{
-    log('BMS: membuka dialog pilih device...','sys');
-    _bmsDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [JK_SERVICE_UUID] }],
-      optionalServices: [JK_SERVICE_UUID]
-    });
+    log('BMS ('+_getBmsProtoMeta().badge+'): membuka dialog pilih device...','sys');
+    const optSvcs = [JK_SERVICE_UUID, FFF0_SERVICE_UUID, JBD_SERVICE_UUID];
+    if(_bmsProtocolType === 'jk'){
+      _bmsDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [JK_SERVICE_UUID] }],
+        optionalServices: optSvcs
+      });
+    } else {
+      _bmsDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: optSvcs
+      });
+    }
     _bmsDevice.addEventListener('gattserverdisconnected', _bmsOnDisconnected);
     await _bmsSetupWebGatt();
   } catch(e){
@@ -13150,61 +13348,80 @@ async function bmsConnect(){
   }
 }
 
-// Setup GATT (connect + discover service + notify + handshake) — dipisah
-// dari bmsConnect() supaya bisa dipakai ulang pas RECONNECT OTOMATIS, yg
-// gak boleh manggil requestDevice() lagi (itu wajib user gesture & bakal
-// nongolin dialog pilih device tiap kali, sangat mengganggu kalau otomatis).
-async function _bmsSetupWebGatt(){
-  log('BMS: menyambungkan ke '+_bmsDevice.name+'...','sys');
-  _bmsServer = await _bmsDevice.gatt.connect();
+async function _bmsTryChar(svc, uuid){
+  try{ return await svc.getCharacteristic(uuid); }catch(e){ return null; }
+}
 
-  // PENTING: device ini declare service FFE0 DUA KALI (ketemu via nRF
-  // Connect di sisi native) — characteristic FFF2/FFE1 cuma ada di salah
-  // satu instance. getPrimaryService() (singular) cuma ambil match
-  // pertama, jadi di sini kita pakai getPrimaryServices() (plural) &
-  // iterate semua instance, sama persis kayak fix di BmsBleManager.java.
-  const services = await _bmsServer.getPrimaryServices(JK_SERVICE_UUID);
-  log('BMS: ketemu '+services.length+' instance service FFE0','sys');
+async function _bmsSetupWebGatt(){
+  log('BMS ('+_getBmsProtoMeta().badge+'): menyambungkan ke '+_bmsDevice.name+'...','sys');
+  _bmsServer = await _bmsDevice.gatt.connect();
   _bmsChar = null; _bmsWriteChar = null;
-  for(const svc of services){
+
+  if(_bmsProtocolType === 'jk'){
+    const services = await _bmsServer.getPrimaryServices(JK_SERVICE_UUID);
+    for(const svc of services){
+      if(!_bmsChar) _bmsChar = await _bmsTryChar(svc, JK_CHAR_NOTIFY_UUID);
+      if(!_bmsWriteChar) _bmsWriteChar = await _bmsTryChar(svc, JK_CHAR_WRITE_UUID);
+      if(_bmsChar && _bmsWriteChar) break;
+    }
+    if(!_bmsWriteChar && _bmsChar) _bmsWriteChar = _bmsChar;
+  } else if(_bmsProtocolType === 'jbd'){
+    try{
+      const svc = await _bmsServer.getPrimaryService(JBD_SERVICE_UUID);
+      _bmsChar = await _bmsTryChar(svc, JBD_CHAR_NOTIFY_UUID);
+      _bmsWriteChar = await _bmsTryChar(svc, JBD_CHAR_WRITE_UUID);
+    }catch(e){}
     if(!_bmsChar){
-      try{ _bmsChar = await svc.getCharacteristic(JK_CHAR_NOTIFY_UUID); }catch(e){}
+      try{
+        const services = await _bmsServer.getPrimaryServices(JK_SERVICE_UUID);
+        for(const svc of services){
+          if(!_bmsChar) _bmsChar = await _bmsTryChar(svc, JK_CHAR_NOTIFY_UUID);
+          if(!_bmsWriteChar) _bmsWriteChar = await _bmsTryChar(svc, CHAR_FFE2_UUID) || await _bmsTryChar(svc, JK_CHAR_WRITE_UUID);
+        }
+      }catch(e){}
     }
-    if(!_bmsWriteChar){
-      try{ _bmsWriteChar = await svc.getCharacteristic(JK_CHAR_WRITE_UUID); }catch(e){}
+  } else {
+    // Daly / ANT: FFE0 (FFE1 / FFE2 / FFF2 / FFE1) or FFF0 (FFF1 / FFF2) or FF00 (FF01 / FF02)
+    try{
+      const services = await _bmsServer.getPrimaryServices(JK_SERVICE_UUID);
+      for(const svc of services){
+        if(!_bmsChar) _bmsChar = await _bmsTryChar(svc, JK_CHAR_NOTIFY_UUID);
+        if(!_bmsWriteChar) _bmsWriteChar = await _bmsTryChar(svc, CHAR_FFE2_UUID) || await _bmsTryChar(svc, JK_CHAR_WRITE_UUID);
+      }
+    }catch(e){}
+    if(!_bmsChar){
+      try{
+        const svc = await _bmsServer.getPrimaryService(FFF0_SERVICE_UUID);
+        _bmsChar = await _bmsTryChar(svc, CHAR_FFF1_UUID);
+        _bmsWriteChar = await _bmsTryChar(svc, JK_CHAR_WRITE_UUID) || await _bmsTryChar(svc, CHAR_FFF1_UUID);
+      }catch(e){}
     }
-    if(_bmsChar && _bmsWriteChar) break;
+    if(!_bmsChar){
+      try{
+        const svc = await _bmsServer.getPrimaryService(JBD_SERVICE_UUID);
+        _bmsChar = await _bmsTryChar(svc, JBD_CHAR_NOTIFY_UUID);
+        _bmsWriteChar = await _bmsTryChar(svc, JBD_CHAR_WRITE_UUID);
+      }catch(e){}
+    }
+    if(!_bmsWriteChar && _bmsChar) _bmsWriteChar = _bmsChar;
   }
-  if(!_bmsChar) throw new Error('Characteristic FFE1 (notify) gak ketemu di service manapun');
-  if(!_bmsWriteChar){
-    log('BMS: characteristic FFF2 gak ketemu di service manapun, fallback kirim command ke FFE1','err');
-    _bmsWriteChar = _bmsChar;
-  }
+
+  if(!_bmsChar) throw new Error('Characteristic notify BMS ('+_getBmsProtoMeta().badge+') tidak ditemukan');
+  if(!_bmsWriteChar) _bmsWriteChar = _bmsChar;
 
   await _bmsChar.startNotifications();
   _bmsChar.addEventListener('characteristicvaluechanged', _bmsOnNotify);
 
   bmsData.connected = true;
-  bmsData.deviceName = _bmsDevice.name || 'BMS Jikong';
-  _bmsReconnectAttempts = 0; // sukses konek — reset counter reconnect
+  bmsData.connectionState = 'connected';
+  bmsData.lastRxAt = Date.now();
+  bmsData.deviceName = _bmsDevice.name || _getBmsProtoMeta().short;
+  _bmsReconnectAttempts = 0;
   clearTimeout(_bmsReconnectTimer);
   _bmsUpdatePairUI();
-  showToast('🔌 BMS Jikong tersambung');
-  log('BMS: tersambung ✓','sys');
-
-  // HANDSHAKE WAJIB: firmware JK-BMS butuh request Device Info (0x97) dulu
-  // sekali begitu notify aktif, baru mau "buka jalur" buat request Cell
-  // Info (0x96). Skip step ini = BMS cuma balikin frame Settings terus.
-  // Guard _bmsAwaitingResponse jg dipasang di sini — sebelumnya delay 300ms
-  // ke request 0x96 berikutnya kepotong pendek, jadi transmisi frame
-  // Settings dari handshake ini malah keputus/direstart sblm kelar 300 byte.
-  _bmsArmAwaitGuard();
-  await bmsSendCommand(JK_CMD_GET_DEVICE_INFO);
-  await new Promise(r=>setTimeout(r, 1500));
-
-  // Minta data cell info pertama, lalu polling berkala
-  await bmsRequestCellInfo();
-  _bmsPollTimer = setInterval(()=>{ if(bmsData.connected) bmsRequestCellInfo(); }, 2500);
+  showToast('🔌 ' + _getBmsProtoMeta().short + ' tersambung');
+  log('BMS ('+_getBmsProtoMeta().badge+'): tersambung ✓','sys');
+  _bmsStartProtocolSession();
 }
 
 // Dipanggil dari _bmsScheduleReconnect() — reconnect otomatis tanpa dialog
@@ -13429,20 +13646,13 @@ window.onBmsConnected = function(name){
   bmsData.connectionState = 'connected';
   bmsData.lastRxAt = Date.now();
   bmsData.disconnectReason = '';
-  bmsData.deviceName = name || bmsData.deviceName || 'BMS Jikong';
-  _bmsReconnectAttempts = 0; // sukses konek — reset counter reconnect
+  bmsData.deviceName = name || bmsData.deviceName || _getBmsProtoMeta().short;
+  _bmsReconnectAttempts = 0;
   clearTimeout(_bmsReconnectTimer);
   _bmsUpdatePairUI();
-  showToast('🔌 BMS Jikong tersambung');
-  log('BMS: tersambung (native) ✓','sys');
-
-  // Handshake sama persis kayak jalur Web Bluetooth, dgn guard yg sama
-  _bmsArmAwaitGuard();
-  bmsSendCommand(JK_CMD_GET_DEVICE_INFO);
-  setTimeout(()=>{
-    bmsRequestCellInfo();
-    _bmsPollTimer = setInterval(()=>{ if(bmsData.connected) bmsRequestCellInfo(); }, 2500);
-  }, 1500);
+  showToast('🔌 ' + _getBmsProtoMeta().short + ' tersambung');
+  log('BMS ('+_getBmsProtoMeta().badge+'): tersambung (native) ✓','sys');
+  _bmsStartProtocolSession();
 };
 
 window.onBmsDisconnected = function(){ _bmsOnDisconnected(); };
@@ -13461,51 +13671,114 @@ window.onBmsRawData = function(hexString){
   }
 };
 
-// Helper generik: kirim command register ke BMS. Sesuai firmware asli
-// (ESP_GATT_WRITE_TYPE_NO_RSP), prioritas write-without-response — bukan
-// writeValue() biasa spt yg saya pakai sebelumnya (kemungkinan command
-// diabaikan diam2 sama BMS krn tipe write-nya gak cocok).
+async function bmsWriteBytes(bytes, label=''){
+  const hex = Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+  if(_bmsFrameLogCount < 30 && label) log('BMS: kirim '+label+' → '+_bmsHex(bytes),'sys');
+  if(IS_NATIVE_ANDROID){
+    try{ Android.bmsWriteRaw(hex); }
+    catch(e){ log('BMS: gagal kirim command native — '+e.message,'err'); }
+    return;
+  }
+  const target = _bmsWriteChar || _bmsChar;
+  if(!target) return;
+  try{
+    if(target.writeValueWithoutResponse) await target.writeValueWithoutResponse(bytes);
+    else await target.writeValue(bytes);
+  }catch(e){
+    try{ await target.writeValue(bytes); }
+    catch(e2){ log('BMS: gagal kirim command '+label+' — '+e2.message,'err'); }
+  }
+}
+
 async function bmsSendCommand(register, value=0, length=0){
-  // Frame command 20 byte: AA 55 90 EB [reg][len][value 4B LE][14B pad][checksum]
   const cmd = new Uint8Array(20);
   cmd[0]=0xAA; cmd[1]=0x55; cmd[2]=0x90; cmd[3]=0xEB;
   cmd[4]=register; cmd[5]=length;
   cmd[6]=value & 0xFF; cmd[7]=(value>>8)&0xFF; cmd[8]=(value>>16)&0xFF; cmd[9]=(value>>24)&0xFF;
   let sum=0; for(let i=0;i<19;i++) sum+=cmd[i];
   cmd[19]=sum & 0xFF;
-  if(_bmsFrameLogCount < 30) log('BMS: kirim command 0x'+register.toString(16)+' → '+_bmsHex(cmd),'sys');
+  await bmsWriteBytes(cmd, '0x'+register.toString(16));
+}
 
-  if(IS_NATIVE_ANDROID){
-    try{ Android.bmsWriteRaw(_bmsHex(cmd).replace(/ /g,'')); }
-    catch(e){ log('BMS: gagal kirim command native — '+e.message,'err'); }
+function _dalyBuildCmd(cmd){
+  const b = new Uint8Array(13);
+  b[0]=0xA5; b[1]=0x40; b[2]=cmd; b[3]=0x08;
+  let s=0; for(let i=0;i<12;i++) s+=b[i];
+  b[12]=s & 0xFF;
+  return b;
+}
+
+let _dalyPollIdx = 0;
+let _dalyCellsBuf = [];
+let _dalyCellCount = 0;
+let _antGotNewFrame = false;
+let _antTicks = 0;
+
+function _bmsStartProtocolSession(){
+  if(_bmsPollTimer){ clearInterval(_bmsPollTimer); _bmsPollTimer = null; }
+  _bmsRxBuf = new Uint8Array(0);
+  _dalyPollIdx = 0;
+  _dalyCellsBuf = [];
+  _dalyCellCount = 0;
+  _antGotNewFrame = false;
+  _antTicks = 0;
+
+  if(_bmsProtocolType === 'daly'){
+    const initCmds = [0x90, 0x94, 0x91, 0x92, 0x93, 0x95];
+    initCmds.forEach((c, idx)=> setTimeout(()=>{ if(bmsData.connected) bmsWriteBytes(_dalyBuildCmd(c), 'Daly 0x'+c.toString(16)); }, idx*180));
+    const secCmds = [0x91, 0x92, 0x95, 0x93, 0x94];
+    _bmsPollTimer = setInterval(()=>{
+      if(!bmsData.connected) return;
+      bmsWriteBytes(_dalyBuildCmd(0x90), 'Daly 0x90');
+      const next = secCmds[(_dalyPollIdx++) % secCmds.length];
+      setTimeout(()=>{ if(bmsData.connected) bmsWriteBytes(_dalyBuildCmd(next), 'Daly 0x'+next.toString(16)); }, 190);
+    }, 2400);
     return;
   }
 
-  const target = _bmsWriteChar || _bmsChar;
-  if(!target) return;
-  try{
-    await target.writeValueWithoutResponse(cmd);
-  }catch(e){
-    // Fallback kalau characteristic-nya ternyata cuma dukung write-with-response
-    try{
-      await target.writeValue(cmd);
-      if(_bmsFrameLogCount < 30) log('BMS: writeValueWithoutResponse gagal, fallback ke writeValue berhasil','sys');
-    }catch(e2){
-      log('BMS: gagal kirim command 0x'+register.toString(16)+' (2 cara dicoba) — '+e2.message,'err');
-    }
+  if(_bmsProtocolType === 'ant'){
+    const antNewPoll = new Uint8Array([0x7E,0xA1,0x01,0x00,0x00,0xBE,0x18,0x55,0xAA,0x55]);
+    const antLegacyPoll = new Uint8Array([0x5A,0x5A,0x00,0x00,0x00,0x00]);
+    const pollAnt = ()=>{
+      if(!bmsData.connected) return;
+      _antTicks++;
+      bmsWriteBytes(antNewPoll, 'ANT 7E A1');
+      if(_antTicks >= 2 && !_antGotNewFrame){
+        setTimeout(()=>{ if(bmsData.connected && !_antGotNewFrame) bmsWriteBytes(antLegacyPoll, 'ANT legacy'); }, 220);
+      }
+    };
+    pollAnt();
+    _bmsPollTimer = setInterval(pollAnt, 2200);
+    return;
   }
+
+  if(_bmsProtocolType === 'jbd'){
+    const jbdInfo = new Uint8Array([0xDD,0xA5,0x03,0x00,0xFF,0xFD,0x77]);
+    const jbdCells = new Uint8Array([0xDD,0xA5,0x04,0x00,0xFF,0xFC,0x77]);
+    const pollJbd = ()=>{
+      if(!bmsData.connected) return;
+      bmsWriteBytes(jbdInfo, 'JBD 0x03');
+      setTimeout(()=>{ if(bmsData.connected) bmsWriteBytes(jbdCells, 'JBD 0x04'); }, 240);
+    };
+    pollJbd();
+    _bmsPollTimer = setInterval(pollJbd, 2200);
+    return;
+  }
+
+  // Default: JK-BMS
+  _bmsArmAwaitGuard();
+  bmsSendCommand(JK_CMD_GET_DEVICE_INFO);
+  setTimeout(()=>{
+    if(!bmsData.connected || _bmsProtocolType !== 'jk') return;
+    bmsRequestCellInfo();
+    _bmsPollTimer = setInterval(()=>{ if(bmsData.connected && _bmsProtocolType === 'jk') bmsRequestCellInfo(); }, 2500);
+  }, 1500);
 }
 
-// Flag: masih nunggu frame sebelumnya kelar diterima? Kalau iya, JANGAN
-// kirim request baru — itu yg kemarin bikin transmisi BMS keputus/direstart
-// terus-terusan sblm sempet nyampe 300 byte penuh (makanya panel gak pernah
-// keisi walau raw chunk kebaca di log).
+// Flag: masih nunggu frame sebelumnya kelar diterima?
 let _bmsAwaitingResponse = false;
 let _bmsAwaitTimeout = null;
 
-// Dipakai SEBELUM kirim command apapun ke BMS (handshake 0x97 maupun
-// request cell info 0x96) — pasang guard + safety timeout 3 detik, biar
-// gak pernah macet permanen kalau responnya ilang/gak lengkap di jalan.
 function _bmsArmAwaitGuard(){
   _bmsAwaitingResponse = true;
   clearTimeout(_bmsAwaitTimeout);
@@ -13527,64 +13800,50 @@ async function bmsRequestCellInfo(){
   await bmsSendCommand(JK_CMD_GET_CELL_INFO, 0, 0);
 }
 
-let _bmsFrameLogCount = 0; // batasi log biar gak spam — cukup beberapa frame pertama
+let _bmsFrameLogCount = 0;
 
-// Web Bluetooth entry point — ekstrak chunk dari event, lalu serahkan ke
-// _bmsHandleRawChunk yg SAMA persis dipakai jalur native (satu logic parsing)
 function _bmsOnNotify(ev){
   const dv = ev.target.value;
-  // FIX: DataView.buffer itu ArrayBuffer PENUH, bukan cuma bagian punya paket
-  // ini — kalau gak diambil pakai byteOffset/byteLength, bisa kebawa byte
-  // dari luar paket & bikin reassembly kacau. Ini salah satu bug nyata.
+  bmsData.lastRxAt = Date.now();
+  if(bmsData.connectionState !== 'connected') bmsData.connectionState = 'connected';
   const chunk = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
   _bmsHandleRawChunk(chunk);
 }
 
 function _bmsHandleRawChunk(chunk){
   if(_bmsFrameLogCount < 30){
-    log('BMS raw chunk ('+chunk.length+'B): '+_bmsHex(chunk), 'sys');
+    log('BMS ('+_getBmsProtoMeta().badge+') raw ('+chunk.length+'B): '+_bmsHex(chunk), 'sys');
   }
+  if(_bmsProtocolType === 'daly'){ _dalyHandleRawChunk(chunk); return; }
+  if(_bmsProtocolType === 'ant'){ _antHandleRawChunk(chunk); return; }
+  if(_bmsProtocolType === 'jbd'){ _jbdHandleRawChunk(chunk); return; }
 
-  // Gabungkan potongan paket sampai ketemu frame header lengkap (55 AA EB 90)
+  // JK-BMS 300-byte frame (55 AA EB 90)
   const merged = new Uint8Array(_bmsRxBuf.length + chunk.length);
   merged.set(_bmsRxBuf); merged.set(chunk, _bmsRxBuf.length);
   _bmsRxBuf = merged;
 
-  // Cari header 0x55 0xAA 0xEB 0x90 di awal buffer; buang sampah sebelum itu
   const hdrIdx = _bmsFindHeader(_bmsRxBuf);
   if(hdrIdx === -1){
-    // Gak nemu header sama sekali & buffer udah kegedean → kemungkinan besar
-    // device ini kirim format beda dari yg kita asumsikan. Reset drpd numpuk
-    // memory terus & biar percobaan berikutnya mulai bersih.
     if(_bmsRxBuf.length > 600){
-      log('BMS: header 55 AA EB 90 gak ketemu dlm 600 byte — reset buffer. Kemungkinan format frame device ini beda.', 'err');
+      log('BMS: header 55 AA EB 90 gak ketemu dlm 600 byte — reset buffer.', 'err');
       _bmsRxBuf = new Uint8Array(0);
     }
     return;
   }
   if(hdrIdx > 0) _bmsRxBuf = _bmsRxBuf.slice(hdrIdx);
-
-  // Frame Cell Info JK-BMS selalu persis 300 byte (device kadang kirim byte
-  // ekstra di belakangnya, tapi bukan bagian frame ini — bakal dipotong pas parse).
   if(_bmsRxBuf.length < 300) return;
 
   if(_bmsFrameLogCount < 30){
-    log('BMS frame lengkap ('+_bmsRxBuf.length+'B), byte[4] (frame type)='+
-        '0x'+_bmsRxBuf[4].toString(16).padStart(2,'0'), 'sys');
+    log('BMS frame lengkap ('+_bmsRxBuf.length+'B), byte[4]=0x'+_bmsRxBuf[4].toString(16).padStart(2,'0'), 'sys');
     _bmsFrameLogCount++;
   }
-
-  // Frame utuh udah diterima — lepas guard "awaiting" & batalkan timeout,
-  // gak perlu nunggu 3 detik lagi krn siklus request-response ini beres.
   _bmsAwaitingResponse = false;
   clearTimeout(_bmsAwaitTimeout);
 
-  try{
-    _bmsParseCellInfoFrame(_bmsRxBuf);
-  }catch(e){
-    log('BMS: parse error — '+e.message,'err');
-  }
-  _bmsRxBuf = new Uint8Array(0); // reset, tunggu frame berikutnya
+  try{ _bmsParseCellInfoFrame(_bmsRxBuf); }
+  catch(e){ log('BMS: parse error — '+e.message,'err'); }
+  _bmsRxBuf = new Uint8Array(0);
 }
 
 function _bmsHex(u8){
@@ -14007,7 +14266,555 @@ function bmsCycleCellSort(){
                      : _bmsCellSortMode === 'desc'  ? '⇣ Tertinggi'
                      : '⇡ Terendah';
   }
-  renderBmsPanel(); // re-render list pakai urutan baru
+  renderBmsPanel();
+}
+
+// ── PARSER MULTI-BMS (DALY / ANT / JBD) ─────────────────────────
+function _u16be(buf,o){ return (buf[o]<<8)|buf[o+1]; }
+function _i16be(buf,o){ const v=(buf[o]<<8)|buf[o+1]; return v>0x7FFF ? v-0x10000 : v; }
+function _u32be(buf,o){ return ((buf[o]<<24)|(buf[o+1]<<16)|(buf[o+2]<<8)|buf[o+3])>>>0; }
+function _i32be(buf,o){ return (buf[o]<<24)|(buf[o+1]<<16)|(buf[o+2]<<8)|buf[o+3]; }
+function _i8(b){ return b>127 ? b-256 : b; }
+
+function _bmsCommitParsedUpdate(srcLabel){
+  bmsData.lastUpdate = Date.now();
+  _lastBmsEnergyTs = bmsData.lastUpdate;
+  if(bmsData.cells && bmsData.cells.length > 1){
+    bmsData.deltaCellV = +(Math.max(...bmsData.cells) - Math.min(...bmsData.cells)).toFixed(3);
+  }
+  refreshBattRealtimeCards();
+  updateRangeEstimate();
+  if(getEffSoc()!=null) renderBatteryIcon(getEffSoc());
+  renderBmsPanel();
+  if(_bmsFrameLogCount < 30){
+    _bmsFrameLogCount++;
+    log(`BMS (${srcLabel}): pack=${bmsData.vpack}V, arus=${bmsData.ipack}A, SOC=${bmsData.soc}%, cells=${bmsData.cells.length}`,'sys');
+  }
+}
+
+// 1. DALY SMART BMS (13-byte frames starting with 0xA5)
+function _dalyHandleRawChunk(chunk){
+  const merged = new Uint8Array(_bmsRxBuf.length + chunk.length);
+  merged.set(_bmsRxBuf); merged.set(chunk, _bmsRxBuf.length);
+  _bmsRxBuf = merged;
+
+  let pos = 0, updated = false;
+  while(pos + 13 <= _bmsRxBuf.length){
+    if(_bmsRxBuf[pos] !== 0xA5){ pos++; continue; }
+    const addr = _bmsRxBuf[pos+1], cmd = _bmsRxBuf[pos+2], len = _bmsRxBuf[pos+3];
+    if(len !== 0x08 || (addr !== 0x01 && addr !== 0x02 && addr !== 0x80)){ pos++; continue; }
+    let sum = 0; for(let k=0;k<12;k++) sum += _bmsRxBuf[pos+k];
+    if((sum & 0xFF) !== _bmsRxBuf[pos+12]){ pos++; continue; }
+
+    const d = _bmsRxBuf.subarray(pos+4, pos+12);
+    if(cmd === 0x90){
+      const vp = +(_u16be(d,0) * 0.1).toFixed(2);
+      const rawI = _u16be(d,4);
+      const ip = +((30000 - rawI) * 0.1).toFixed(2); // <30000 = charge (+), >30000 = discharge (-)
+      const soc = Math.min(100, Math.max(0, +(_u16be(d,6) * 0.1).toFixed(1)));
+      if(vp > 5 && vp < 200) bmsData.vpack = vp;
+      bmsData.ipack = ip;
+      bmsData.soc = Math.round(soc);
+      updated = true;
+    } else if(cmd === 0x91){
+      const maxMv = _u16be(d,0), minMv = _u16be(d,3);
+      if(maxMv > 500 && minMv > 500 && maxMv >= minMv){
+        bmsData.deltaCellV = +((maxMv - minMv)/1000).toFixed(3);
+      }
+      updated = true;
+    } else if(cmd === 0x92){
+      if(d[0] > 0 && d[0] < 200) bmsData.temp1 = d[0] - 40;
+      if(d[2] > 0 && d[2] < 200) bmsData.temp2 = d[2] - 40;
+      updated = true;
+    } else if(cmd === 0x93){
+      const remAh = +(_u32be(d,4) / 1000).toFixed(2);
+      if(remAh > 0 && remAh < 2000) bmsData.capRemainAh = remAh;
+      updated = true;
+    } else if(cmd === 0x94){
+      if(d[0] >= 1 && d[0] <= 48) _dalyCellCount = d[0];
+      updated = true;
+    } else if(cmd === 0x95){
+      const pg = d[0];
+      if(pg >= 1 && pg <= 16){
+        for(let j=0;j<3;j++){
+          const idx = (pg-1)*3 + j;
+          const v = _u16be(d, 1 + j*2) / 1000;
+          if(v > 0.5 && v < 5.5) _dalyCellsBuf[idx] = v;
+        }
+        const limit = _dalyCellCount > 0 ? _dalyCellCount : _dalyCellsBuf.length;
+        const clean = [];
+        for(let c=0;c<limit;c++){
+          if(typeof _dalyCellsBuf[c]==='number' && _dalyCellsBuf[c]>0.5) clean.push(_dalyCellsBuf[c]);
+        }
+        if(clean.length) bmsData.cells = clean;
+      }
+      updated = true;
+    }
+    pos += 13;
+  }
+  _bmsRxBuf = _bmsRxBuf.slice(pos);
+  if(_bmsRxBuf.length > 512) _bmsRxBuf = new Uint8Array(0);
+  if(updated) _bmsCommitParsedUpdate('Daly');
+}
+
+// 2. ANT BMS (7E A1 11 ... AA 55 BLE protocol + AA 55 AA FF 140-byte legacy)
+function _antHandleRawChunk(chunk){
+  const merged = new Uint8Array(_bmsRxBuf.length + chunk.length);
+  merged.set(_bmsRxBuf); merged.set(chunk, _bmsRxBuf.length);
+  _bmsRxBuf = merged;
+
+  let i = 0, updated = false;
+  while(i + 12 <= _bmsRxBuf.length){
+    // New ANT BLE: 7E A1 11 ... AA 55
+    if(_bmsRxBuf[i]===0x7E && _bmsRxBuf[i+1]===0xA1){
+      const frameType = _bmsRxBuf[i+2];
+      const dataLen = _bmsRxBuf[i+5];
+      const totalLen = dataLen + 10;
+      if(totalLen < 12 || totalLen > 260){ i++; continue; }
+      if(i + totalLen > _bmsRxBuf.length) break; // tunggu sisa paket
+      if(_bmsRxBuf[i+totalLen-2]===0xAA && _bmsRxBuf[i+totalLen-1]===0x55){
+        _antGotNewFrame = true;
+        if(frameType === 0x11 && totalLen >= 46){
+          const f = _bmsRxBuf.subarray(i, i + totalLen);
+          const nTemps = f[8], nCells = f[9];
+          if(nCells >= 4 && nCells <= 32 && 34 + nCells*2 + nTemps*2 + 12 <= f.length - 4){
+            const cells = [];
+            for(let c=0;c<nCells;c++){
+              const v = _u16(f, 34 + c*2) * 0.001;
+              if(v > 0.5 && v < 5.5) cells.push(v);
+            }
+            if(cells.length) bmsData.cells = cells;
+            const off = 34 + nCells*2;
+            if(nTemps >= 1){ const t1 = _i16le(f, off); if(t1>-40 && t1<130) bmsData.temp1 = t1; }
+            if(nTemps >= 2){ const t2 = _i16le(f, off+2); if(t2>-40 && t2<130) bmsData.temp2 = t2; }
+            const toff = off + nTemps*2;
+            const tMos = _i16le(f, toff); if(tMos>-40 && tMos<150) bmsData.tempMos = tMos;
+            const sumCells = cells.reduce((a,b)=>a+b, 0);
+            let vp = _u16(f, toff+4) * 0.01;
+            if(sumCells > 10 && Math.abs(vp*10 - sumCells) < Math.abs(vp - sumCells)) vp = vp * 10;
+            if(vp > 5 && vp < 200) bmsData.vpack = +vp.toFixed(2);
+            const ip = +(_i16le(f, toff+6) * 0.1).toFixed(2);
+            bmsData.ipack = ip;
+            const soc = _u16(f, toff+8);
+            if(soc >= 0 && soc <= 100) bmsData.soc = soc;
+            const soh = _u16(f, toff+10);
+            if(soh > 0 && soh <= 100) bmsData.soh = soh;
+            updated = true;
+          }
+        }
+        i += totalLen;
+        continue;
+      }
+      i++; continue;
+    }
+
+    // Legacy ANT 140-byte Big-Endian frame: AA 55 AA FF
+    if(i + 140 <= _bmsRxBuf.length && _bmsRxBuf[i]===0xAA && _bmsRxBuf[i+1]===0x55 && _bmsRxBuf[i+2]===0xAA && _bmsRxBuf[i+3]===0xFF){
+      let sum = 0; for(let k=0;k<138;k++) sum += _bmsRxBuf[i+k];
+      if((sum & 0xFFFF) === _u16be(_bmsRxBuf, i+138)){
+        const f = _bmsRxBuf.subarray(i, i+140);
+        const vp = +(_u16be(f, 4) * 0.1).toFixed(2);
+        if(vp > 5 && vp < 200) bmsData.vpack = vp;
+        const cells = [];
+        for(let c=0;c<32;c++){
+          const v = _u16be(f, 6 + c*2) * 0.001;
+          if(v > 0.5 && v < 5.5) cells.push(v);
+        }
+        if(cells.length) bmsData.cells = cells;
+        bmsData.ipack = +(_i32be(f, 70) * 0.1).toFixed(2);
+        if(f[74] <= 100) bmsData.soc = f[74];
+        const capFull = +(_u32be(f, 75) * 0.000001).toFixed(2);
+        const capRem  = +(_u32be(f, 79) * 0.000001).toFixed(2);
+        if(capFull > 0 && capFull < 2000) bmsData.capFullAh = capFull;
+        if(capRem >= 0 && capRem < 2000) bmsData.capRemainAh = capRem;
+        const tMos = _i16be(f, 91), t1 = _i16be(f, 95), t2 = _i16be(f, 97);
+        if(tMos>-40 && tMos<150) bmsData.tempMos = tMos;
+        if(t1>-40 && t1<130) bmsData.temp1 = t1;
+        if(t2>-40 && t2<130) bmsData.temp2 = t2;
+        updated = true;
+        i += 140;
+        continue;
+      }
+    }
+    i++;
+  }
+  _bmsRxBuf = _bmsRxBuf.slice(i);
+  if(_bmsRxBuf.length > 700) _bmsRxBuf = new Uint8Array(0);
+  if(updated) _bmsCommitParsedUpdate('ANT');
+}
+
+// 3. JBD / XIAOXIANG BMS (DD [cmd] [status] [len] [payload...] [crc16_be] 77)
+function _jbdHandleRawChunk(chunk){
+  const merged = new Uint8Array(_bmsRxBuf.length + chunk.length);
+  merged.set(_bmsRxBuf); merged.set(chunk, _bmsRxBuf.length);
+  _bmsRxBuf = merged;
+
+  let i = 0, updated = false;
+  while(i + 7 <= _bmsRxBuf.length){
+    if(_bmsRxBuf[i] !== 0xDD){ i++; continue; }
+    const cmd = _bmsRxBuf[i+1], status = _bmsRxBuf[i+2], len = _bmsRxBuf[i+3];
+    const total = len + 7;
+    if((cmd !== 0x03 && cmd !== 0x04 && cmd !== 0x05) || len > 120){ i++; continue; }
+    if(i + total > _bmsRxBuf.length) break;
+    if(_bmsRxBuf[i + total - 1] !== 0x77){ i++; continue; }
+
+    let s = 0; for(let k=2;k<4+len;k++) s += _bmsRxBuf[i+k];
+    const calcCrc = (0x10000 - s) & 0xFFFF;
+    const remCrc = _u16be(_bmsRxBuf, i+4+len);
+    if(calcCrc !== remCrc){ i++; continue; }
+
+    if(status === 0x00){
+      const p = i + 4;
+      if(cmd === 0x03 && len >= 23){
+        bmsData.vpack = +(_u16be(_bmsRxBuf, p) / 100).toFixed(2);
+        bmsData.ipack = +(_i16be(_bmsRxBuf, p+2) / 100).toFixed(2);
+        bmsData.capRemainAh = +(_u16be(_bmsRxBuf, p+4) / 100).toFixed(2);
+        bmsData.capFullAh   = +(_u16be(_bmsRxBuf, p+6) / 100).toFixed(2);
+        bmsData.cycles      = _u16be(_bmsRxBuf, p+8);
+        bmsData.balanceStatus = (_u16be(_bmsRxBuf, p+12) || _u16be(_bmsRxBuf, p+14)) ? 1 : 0;
+        bmsData.soc = Math.min(100, Math.max(0, _bmsRxBuf[p+19]));
+        const ntcCount = _bmsRxBuf[p+22];
+        if(ntcCount >= 1 && len >= 25) bmsData.temp1 = +((_u16be(_bmsRxBuf, p+23) - 2731) / 10).toFixed(1);
+        if(ntcCount >= 2 && len >= 27) bmsData.temp2 = +((_u16be(_bmsRxBuf, p+25) - 2731) / 10).toFixed(1);
+        updated = true;
+      } else if(cmd === 0x04 && len >= 2){
+        const cells = [];
+        const n = Math.floor(len / 2);
+        for(let c=0;c<n;c++){
+          const v = _u16be(_bmsRxBuf, p + c*2) / 1000;
+          if(v > 0.5 && v < 5.5) cells.push(v);
+        }
+        if(cells.length) bmsData.cells = cells;
+        updated = true;
+      }
+    }
+    i += total;
+  }
+  _bmsRxBuf = _bmsRxBuf.slice(i);
+  if(_bmsRxBuf.length > 512) _bmsRxBuf = new Uint8Array(0);
+  if(updated) _bmsCommitParsedUpdate('JBD');
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── KONTROLER FARDRIVER (BLE DONGLE FF00 / FFE0) ──
+// Stream 16-byte berheader 0xAA, CRC16 Modbus (init 0x7F3C / 0xFFFF).
+// Mengisi motoData (RPM, Speed, VBAT, IBAT, TINV, TMOT, Throttle, Park/Mode)
+// lewat parseResponse(..., 'fardriver') sehingga HUD, grafik & trip menyatu.
+// ══════════════════════════════════════════════════════════════
+let _fdDevice = null, _fdServer = null, _fdNotifyChar = null, _fdWriteChar = null;
+let _fdRxBuf = new Uint8Array(0);
+let _fdLastMac = null, _fdLastName = null;
+let _fdWasManualDisconnect = false, _fdReconnectAttempts = 0, _fdReconnectTimer = null;
+let _fdFrameLogCount = 0;
+
+function openFardriverPairModal(){
+  document.getElementById('fardriverPairModal').classList.add('show');
+  document.getElementById('fardriverPairUnsupported').style.display =
+    (IS_NATIVE_ANDROID || navigator.bluetooth) ? 'none' : 'block';
+  _fdUpdatePairUI();
+}
+
+function _fdUpdatePairUI(){
+  const dot = document.getElementById('fardriverPairStatusDot');
+  const text = document.getElementById('fardriverPairStatusText');
+  const scanBtn = document.getElementById('fardriverScanBtn');
+  const discBtn = document.getElementById('fardriverDisconnectBtn');
+  const forgetBtn = document.getElementById('fardriverForgetBtn');
+  const calibEl = document.getElementById('fdCalibSummary');
+  if(calibEl){
+    calibEl.textContent = `Rasio ${FD_CONFIG.gearRatio} · Ban ${FD_CONFIG.wheelCircMm} mm` +
+      (FD_CONFIG.rpmDivisor>1 ? ` · Div /${FD_CONFIG.rpmDivisor}` : '');
+  }
+  if(forgetBtn) forgetBtn.style.display = (IS_NATIVE_ANDROID && localStorage.getItem('fardriver_last_mac')) ? 'block' : 'none';
+  if(fardriverData.connected){
+    if(dot) dot.textContent = '🟢';
+    if(text) text.textContent = 'Terhubung ke ' + (fardriverData.deviceName || 'Fardriver');
+    if(scanBtn) scanBtn.style.display = 'none';
+    if(discBtn) discBtn.style.display = 'block';
+  } else {
+    if(dot) dot.textContent = '⚪';
+    if(text) text.textContent = 'Belum terhubung';
+    if(scanBtn) scanBtn.style.display = 'block';
+    if(discBtn) discBtn.style.display = 'none';
+  }
+  if(typeof syncAkunConnRows === 'function') syncAkunConnRows();
+  if(typeof renderConnStrip === 'function') renderConnStrip();
+}
+
+async function fardriverConnect(){
+  _fdFrameLogCount = 0;
+  if(IS_NATIVE_ANDROID){
+    closeModal('fardriverPairModal');
+    fardriverStartNativeScan();
+    return;
+  }
+  if(!navigator.bluetooth){
+    document.getElementById('fardriverPairUnsupported').style.display = 'block';
+    return;
+  }
+  try{
+    log('Fardriver: membuka dialog pilih device BLE...','sys');
+    _fdDevice = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [FD_SERVICE_FF00, FD_SERVICE_FFE0]
+    });
+    _fdDevice.addEventListener('gattserverdisconnected', _fdOnDisconnected);
+    await _fdSetupWebGatt();
+  }catch(e){
+    log('Fardriver: gagal konek — '+e.message,'err');
+    if(e.name !== 'NotFoundError') showToast('⚠️ Gagal sambung ke Fardriver');
+  }
+}
+
+async function _fdSetupWebGatt(){
+  _fdServer = await _fdDevice.gatt.connect();
+  _fdNotifyChar = null; _fdWriteChar = null;
+  try{
+    const svc = await _fdServer.getPrimaryService(FD_SERVICE_FF00);
+    _fdNotifyChar = await _bmsTryChar(svc, FD_CHAR_FF01);
+    _fdWriteChar  = await _bmsTryChar(svc, FD_CHAR_FF02);
+  }catch(e){}
+  if(!_fdNotifyChar){
+    try{
+      const services = await _fdServer.getPrimaryServices(FD_SERVICE_FFE0);
+      for(const svc of services){
+        if(!_fdNotifyChar) _fdNotifyChar = await _bmsTryChar(svc, FD_CHAR_FFE1);
+        if(!_fdWriteChar) _fdWriteChar = await _bmsTryChar(svc, CHAR_FFE2_UUID) || await _bmsTryChar(svc, JK_CHAR_WRITE_UUID);
+      }
+    }catch(e){}
+  }
+  if(!_fdNotifyChar) throw new Error('Characteristic notify Fardriver (FF01/FFE1) tidak ditemukan');
+  if(!_fdWriteChar) _fdWriteChar = _fdNotifyChar;
+  await _fdNotifyChar.startNotifications();
+  _fdNotifyChar.addEventListener('characteristicvaluechanged', ev=>{
+    const dv = ev.target.value;
+    fardriverData.lastRxAt = Date.now();
+    window._motorLastDataAt = fardriverData.lastRxAt;
+    _fdHandleRawChunk(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
+  });
+  window.onFardriverConnected(_fdDevice.name || 'Fardriver BLE');
+}
+
+function fardriverStartNativeScan(){
+  document.getElementById('fardriverScanModal').classList.add('show');
+  document.getElementById('fardriverScanStatus').style.display = 'block';
+  document.getElementById('fardriverScanEmpty').style.display = 'none';
+  document.getElementById('fardriverDeviceList').innerHTML = '';
+  const showAll = !!(document.getElementById('fdScanAllToggle') && document.getElementById('fdScanAllToggle').checked);
+  try{ Android.fardriverStartScan(showAll); }
+  catch(e){
+    log('Fardriver: Android.fardriverStartScan() error — '+e.message,'err');
+    showToast('⚠️ Fitur Fardriver native belum tersedia di build ini');
+  }
+}
+
+window.onFardriverDeviceFound = function(name, mac){
+  document.getElementById('fardriverScanStatus').style.display = 'none';
+  const list = document.getElementById('fardriverDeviceList');
+  if(list.querySelector(`[data-mac="${mac}"]`)) return;
+  const item = document.createElement('div');
+  item.dataset.mac = mac;
+  item.style.cssText = 'background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;align-items:center;gap:12px;cursor:pointer;-webkit-tap-highlight-color:transparent';
+  item.innerHTML = `
+    <div style="font-size:24px;flex-shrink:0">🎛️</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(name||'Fardriver BLE')}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px;font-family:monospace">${escapeHtml(mac)}</div>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:var(--green);padding:5px 10px;border:1px solid var(--green);border-radius:8px;flex-shrink:0">PILIH</div>`;
+  item.addEventListener('click', ()=> fardriverConnectNative(name, mac));
+  list.appendChild(item);
+};
+
+window.onFardriverScanDone = function(){
+  const list = document.getElementById('fardriverDeviceList');
+  if(!list.children.length){
+    document.getElementById('fardriverScanStatus').style.display = 'none';
+    document.getElementById('fardriverScanEmpty').style.display = 'block';
+  }
+};
+
+function fardriverConnectNative(name, mac){
+  closeModal('fardriverScanModal');
+  _fdFrameLogCount = 0;
+  _fdWasManualDisconnect = false;
+  _fdLastMac = mac; _fdLastName = name;
+  localStorage.setItem('fardriver_last_mac', mac);
+  localStorage.setItem('fardriver_last_name', name || 'Fardriver BLE');
+  fardriverData.deviceName = name || 'Fardriver BLE';
+  fardriverData.connectionState = 'connecting';
+  log('Fardriver: menyambungkan ke '+name+' ('+mac+')...','sys');
+  try{ Android.fardriverConnectMac(mac); }
+  catch(e){ log('Fardriver: fardriverConnectMac gagal — '+e.message,'err'); }
+}
+
+window.onFardriverConnected = function(name){
+  fardriverData.connected = true;
+  fardriverData.connectionState = 'connected';
+  fardriverData.lastRxAt = Date.now();
+  fardriverData.deviceName = name || fardriverData.deviceName || 'Fardriver BLE';
+  _fdReconnectAttempts = 0;
+  clearTimeout(_fdReconnectTimer);
+  const classicBusy = (!!serialPort || (IS_NATIVE_ANDROID && Android.isConnected && Android.isConnected()));
+  if(!classicBusy){
+    motorConnMode = 'fardriver';
+    isConnected = true;
+    wasManualDisconnect = false;
+    window._motorLastDataAt = Date.now();
+    setBtState('connected');
+  }
+  _fdUpdatePairUI();
+  showToast('🎛️ Fardriver tersambung');
+  log('Fardriver: tersambung ✓','sys');
+};
+
+function fardriverDisconnect(){
+  _fdWasManualDisconnect = true;
+  clearTimeout(_fdReconnectTimer);
+  _fdReconnectAttempts = 0;
+  if(IS_NATIVE_ANDROID){
+    try{ Android.fardriverDisconnect(); }catch(e){}
+  } else {
+    try{ if(_fdDevice && _fdDevice.gatt.connected) _fdDevice.gatt.disconnect(); }catch(e){}
+  }
+  _fdOnDisconnected();
+}
+
+function forgetFardriver(){
+  fardriverDisconnect();
+  localStorage.removeItem('fardriver_last_mac');
+  localStorage.removeItem('fardriver_last_name');
+  _fdLastMac = null; _fdLastName = null;
+  _fdUpdatePairUI();
+  showToast('🗑 Fardriver dilupakan');
+}
+
+function _fdOnDisconnected(){
+  fardriverData.connected = false;
+  fardriverData.connectionState = _fdWasManualDisconnect ? 'offline' : 'reconnecting';
+  _fdNotifyChar = null; _fdWriteChar = null;
+  _fdRxBuf = new Uint8Array(0);
+  if(motorConnMode === 'fardriver'){
+    motorConnMode = 'classic';
+    isConnected = false;
+    setBtState('disconnected');
+    saveParkedLocation();
+  }
+  _fdUpdatePairUI();
+  log('Fardriver: terputus','sys');
+  if(_fdWasManualDisconnect){ _fdWasManualDisconnect = false; return; }
+  _fdScheduleReconnect();
+}
+window.onFardriverDisconnected = _fdOnDisconnected;
+
+function _fdScheduleReconnect(){
+  if(!_fdLastMac && !_fdDevice) return;
+  if(_fdReconnectAttempts >= 8){ _fdReconnectAttempts = 0; return; }
+  _fdReconnectAttempts++;
+  const delays = [2000,4000,8000,12000,20000,30000,45000,60000];
+  const d = delays[Math.min(_fdReconnectAttempts-1, delays.length-1)];
+  clearTimeout(_fdReconnectTimer);
+  _fdReconnectTimer = setTimeout(()=>{
+    if(fardriverData.connected) return;
+    if(IS_NATIVE_ANDROID){
+      try{ Android.fardriverConnectMac(_fdLastMac); }catch(e){ _fdScheduleReconnect(); }
+    } else if(_fdDevice){
+      _fdSetupWebGatt().catch(()=>_fdScheduleReconnect());
+    }
+  }, d);
+}
+
+window.onFardriverRawData = function(hexString){
+  try{
+    fardriverData.lastRxAt = Date.now();
+    window._motorLastDataAt = fardriverData.lastRxAt;
+    const bytes = new Uint8Array(hexString.length/2);
+    for(let i=0;i<bytes.length;i++) bytes[i] = parseInt(hexString.substr(i*2,2),16);
+    _fdHandleRawChunk(bytes);
+  }catch(e){ log('Fardriver: decode raw error — '+e.message,'err'); }
+};
+
+function _fdCrc16(buf, off, initVal){
+  let crc = initVal;
+  for(let i=0;i<14;i++){
+    crc ^= buf[off+i];
+    for(let b=0;b<8;b++){
+      crc = (crc & 1) ? ((crc >>> 1) ^ 0xA001) : (crc >>> 1);
+    }
+  }
+  return crc & 0xFFFF;
+}
+
+function _fdHandleRawChunk(chunk){
+  if(_fdFrameLogCount < 25){
+    log('Fardriver raw ('+chunk.length+'B): '+_bmsHex(chunk), 'sys');
+  }
+  const merged = new Uint8Array(_fdRxBuf.length + chunk.length);
+  merged.set(_fdRxBuf); merged.set(chunk, _fdRxBuf.length);
+  _fdRxBuf = merged;
+
+  let i = 0;
+  while(i + 16 <= _fdRxBuf.length){
+    if(_fdRxBuf[i] !== 0xAA){ i++; continue; }
+    const subId = _fdRxBuf[i+1] & 0x3F;
+    const remCrc = _u16(_fdRxBuf, i+14);
+    const okCrc = (remCrc === _fdCrc16(_fdRxBuf, i, 0x7F3C)) || (remCrc === _fdCrc16(_fdRxBuf, i, 0xFFFF));
+    const okNext = (i + 16 < _fdRxBuf.length && _fdRxBuf[i+16] === 0xAA && subId <= 0x36);
+    if(!okCrc && !okNext){ i++; continue; }
+
+    window._motorLastDataAt = Date.now();
+    if(_fdFrameLogCount < 25){
+      _fdFrameLogCount++;
+      log(`Fardriver pkt 0x${subId.toString(16).padStart(2,'0')} crc=${okCrc?'OK':'SYNC'}`,'sys');
+    }
+
+    if(subId === 0x00){
+      const b2 = _fdRxBuf[i+2], b3 = _fdRxBuf[i+3];
+      const gear = b2 & 0x07;
+      const isPark = (gear === 0) || ((b3 & 0x08) !== 0);
+      const modeVal = gear === 1 ? 0 : (gear === 2 ? 1 : (gear >= 3 ? 2 : 0));
+      const rpm = _u16(_fdRxBuf, i+6);
+      if(rpm < 30000){
+        const wheelRpm = rpm / Math.max(0.1, FD_CONFIG.gearRatio * FD_CONFIG.rpmDivisor);
+        const spdKmh = Math.min(220, Math.max(0, +(wheelRpm * (FD_CONFIG.wheelCircMm / 1000) * 0.06).toFixed(1)));
+        fardriverData.rpm = rpm;
+        fardriverData.spd = spdKmh;
+        parseResponse('AT+RPM=' + rpm, 'fardriver');
+        parseResponse('AT+SPD=' + spdKmh, 'fardriver');
+      }
+      parseResponse('AT+PARK=' + (isPark ? 1 : 0), 'fardriver');
+      parseResponse('AT+MODE=' + modeVal, 'fardriver');
+    } else if(subId === 0x01){
+      const vp = +(_u16(_fdRxBuf, i+2) * 0.1).toFixed(1);
+      const rawI = +(_i16le(_fdRxBuf, i+4) * 0.1).toFixed(1);
+      const ip = +(FD_CONFIG.invertCurrent ? rawI : -rawI).toFixed(1);
+      if(vp >= 10 && vp <= 180){
+        fardriverData.vbat = vp;
+        fardriverData.ibat = ip;
+        parseResponse('AT+VBAT=' + vp, 'fardriver');
+        parseResponse('AT+IBAT=' + ip, 'fardriver');
+      }
+    } else if(subId === 0x04){
+      const tCtrl = _i8(_fdRxBuf[i+4]);
+      if(tCtrl >= -25 && tCtrl <= 160){
+        fardriverData.tinv = tCtrl;
+        parseResponse('AT+TINV=' + tCtrl, 'fardriver');
+      }
+    } else if(subId === 0x0D){
+      const tMot = _i8(_fdRxBuf[i+2]);
+      if(tMot >= -25 && tMot <= 210){
+        fardriverData.tmot = tMot;
+        parseResponse('AT+TMOT=' + tMot, 'fardriver');
+      }
+      const trtRaw = _u16(_fdRxBuf, i+3);
+      const trtPct = trtRaw <= 100 ? trtRaw : Math.max(0, Math.min(100, Math.round((trtRaw / 4095) * 100)));
+      fardriverData.throttle = trtPct;
+      parseResponse('AT+TRT=' + trtPct, 'fardriver');
+    }
+    i += 16;
+  }
+  _fdRxBuf = _fdRxBuf.slice(i);
+  if(_fdRxBuf.length > 512) _fdRxBuf = new Uint8Array(0);
 }
 
 
@@ -16740,9 +17547,13 @@ async function attemptAutoReconnect(){
 async function disconnectBLE(){
   closeModal('disconnModal');
   wasManualDisconnect = true;
-  nativeMapStop();   // putus manual → peta native ikut berhenti
+  nativeMapStop();
   stopReconnectWatcher();
   clearMidSessionReconnectTimeout();
+  if(motorConnMode === 'fardriver' && fardriverData.connected){
+    fardriverDisconnect();
+    return;
+  }
   isConnected=false;
   stopPolling();
 
@@ -16750,10 +17561,7 @@ async function disconnectBLE(){
     try{ Android.disconnect(); }catch(e){}
     setBtState('disconnected');
     log('Koneksi diputuskan.','sys');
-    saveParkedLocation(); // motor diputuskan -> anggap parkir, simpan posisi terakhir
-    // (sebelumnya cuma dipanggil di jalur Web Serial di bawah — jalur native
-    // return duluan sebelum sempat kepanggil, makanya lokasi parkir kosong
-    // terus di native padahal di web normal)
+    saveParkedLocation();
     return;
   }
 
@@ -16799,12 +17607,16 @@ function syncAkunConnRows(){
 // Native (Java) kirim tahap lewat window.onBleState(id,state,detail); 'aktif' selalu dari flag koneksi asli.
 const _connState={}, _connEverOn={};
 const CONN_DEVICES=[
-  {id:'motor',name:'Motor',   on:()=>isConnected,          tap:()=>{
+  {id:'motor',name:()=> (CONTROLLER_TYPE==='fardriver' && motorConnMode!=='classic' && motorConnMode!=='le') ? 'Motor' : 'Motor',
+    on:()=>isConnected && motorConnMode!=='fardriver', tap:()=>{
     if(!isConnected && awaitingReconnect) document.getElementById('cancelReconnectModal').classList.add('show');
-    else if(!isConnected && !IS_NATIVE_ANDROID) openConnectChooserModal();   // web: pilihan Classic / LE
-    else chooseConnectMotor();                                              // native: sambung / kelola / putuskan
+    else if(!isConnected && !IS_NATIVE_ANDROID) openConnectChooserModal();
+    else chooseConnectMotor();
   }},
-  {id:'bms',  name:'BMS Jikong', on:()=>bmsData.connected,    tap:()=>openBmsPairModal()},
+  {id:'fardriver', name:'Fardriver',
+    show:()=> CONTROLLER_TYPE==='fardriver' || fardriverData.connected || !!_connState.fardriver,
+    on:()=>fardriverData.connected, tap:()=>openFardriverPairModal()},
+  {id:'bms',  name:()=> _getBmsProtoMeta().short, on:()=>bmsData.connected, tap:()=>openBmsPairModal()},
   {id:'esp32',name:'ESP32',   on:()=>esp32Data.connected,  tap:()=>openEsp32PairModal()},
   {id:'b2',   name:'ESP32 #2',on:()=>battery2Data.connected,tap:()=>_connChipB2Tap()}
 ];
@@ -16843,6 +17655,8 @@ function renderConnStrip(){
   const el=document.getElementById('connStrip'); if(!el) return;
   const now=Date.now(); let html='';
   CONN_DEVICES.forEach(dv=>{
+    if(dv.show && !dv.show()) return;
+    const dvName = typeof dv.name === 'function' ? dv.name() : dv.name;
     let on=false; try{ on=!!dv.on(); }catch(e){}
     if(on){ _connEverOn[dv.id]=true; _connFails[dv.id]=0; delete _connState[dv.id]; }
     const st=_connState[dv.id];
@@ -16857,8 +17671,6 @@ function renderConnStrip(){
       if(dv.id==='motor'){
         if(typeof window._motorRssiVal==='number' && now-(window._motorRssiAt||0)<15000) dbm=window._motorRssiVal;
         else if(typeof window._motorLastDataAt==='number'){
-          // Motor = Bluetooth Classic: Android tidak punya RSSI untuk koneksi aktif, jadi kualitas tautan
-          // dinilai dari seberapa segar data terakhir yang diterima dari MID.
           const age=now-window._motorLastDataAt;
           link = age<3000 ? {lv:4,txt:'Baik',color:'var(--green)'} : age<8000 ? {lv:2,txt:'Sedang',color:'var(--warning)'} : {lv:1,txt:'Lemah',color:'var(--danger)'};
         }
@@ -16871,7 +17683,7 @@ function renderConnStrip(){
         txt+=' · '+link.txt;
       }
     } else if(st && st.d && (k==='queue'||k==='setup'||k==='retry'||k==='fail'||k==='off')) txt+=' · '+st.d;
-    html+='<div class="conn-chip '+v[0]+'" data-id="'+dv.id+'"><span class="cc-dot"></span><span><span class="cc-n">'+dv.name+'</span><span class="cc-s">'+txt+'</span></span>'+sig+'</div>';
+    html+='<div class="conn-chip '+v[0]+'" data-id="'+dv.id+'"><span class="cc-dot"></span><span><span class="cc-n">'+dvName+'</span><span class="cc-s">'+txt+'</span></span>'+sig+'</div>';
   });
   if(el._h!==html){ el.innerHTML=html; el._h=html; }
 }
@@ -16989,23 +17801,25 @@ function onBtClick(){
 // bisa diakses lewat menu Akun, kurang gampang ditemuin dari Home.
 function openConnectChooserModal(){
   const motorSub = document.getElementById('connChooserMotorSub');
+  const fdSub    = document.getElementById('connChooserFdSub');
   const bmsSub   = document.getElementById('connChooserBmsSub');
   const esp32Sub = document.getElementById('connChooserEsp32Sub');
   const leCard   = document.getElementById('connChooserMotorLeCard');
-  if(motorSub) motorSub.textContent = isConnected ? '🟢 Terhubung — ketuk untuk kelola / putuskan' : '⚪ Belum terhubung';
-  if(bmsSub)   bmsSub.textContent   = bmsData.connected ? '🟢 '+(bmsData.deviceName||'Terhubung')+' — aktif' : '⚪ Belum terhubung — ketuk untuk sambungkan';
+  if(motorSub) motorSub.textContent = (isConnected && motorConnMode!=='fardriver') ? '🟢 Terhubung — ketuk untuk kelola / putuskan' : '⚪ Belum terhubung';
+  if(fdSub)    fdSub.textContent    = fardriverData.connected ? '🟢 '+(fardriverData.deviceName||'Terhubung')+' — aktif' : '⚪ Belum terhubung — ketuk untuk sambungkan';
+  if(bmsSub)   bmsSub.textContent   = bmsData.connected ? '🟢 '+(bmsData.deviceName||'Terhubung')+' ('+_getBmsProtoMeta().badge+')' : '⚪ '+_getBmsProtoMeta().short+' · Belum terhubung';
   if(esp32Sub) esp32Sub.textContent = esp32Data.connected ? '🟢 '+(esp32Data.deviceName||'Terhubung')+' — aktif' : '⚪ Belum terhubung — ketuk untuk sambungkan';
+  _bmsApplyProtoLabels();
   updateCombinedConnBadge();
-  // Motor via LE cuma relevan di Web — di native, motor SELALU lewat
-  // Bluetooth Classic (BluetoothService.java), gak ada jalur BLE utk motor.
   if(leCard) leCard.style.display = IS_NATIVE_ANDROID ? 'none' : 'flex';
   document.getElementById('connectChooserModal').classList.add('show');
 }
+function chooseConnectFardriver(){
+  closeModal('connectChooserModal');
+  openFardriverPairModal();
+}
 function chooseConnectMotor(){
-  // Kalau motor sudah tersambung, jangan mencoba koneksi kedua.
-  // Buka modal khusus motor supaya user tetap bisa memutus/ganti device,
-  // sementara BMS/ESP32 tetap boleh disambungkan dari pusat koneksi ini.
-  if(isConnected){
+  if(isConnected && motorConnMode!=='fardriver'){
     closeModal('connectChooserModal');
     const macInfo = document.getElementById('macAddressInfo');
     const macLabel = document.getElementById('currentMacLabel');
@@ -23504,12 +24318,29 @@ function openSettings(){
   pickProvider(MAP_PROVIDER);
   document.getElementById('inMotorLeServiceUuid').value = localStorage.getItem('motor_le_service_uuid')||'';
   document.getElementById('inMotorLeCharUuid').value    = localStorage.getItem('motor_le_char_uuid')||'';
+  const ctSel = document.getElementById('inControllerType');
+  if(ctSel) ctSel.value = CONTROLLER_TYPE;
+  const fdGear = document.getElementById('inFdGearRatio');
+  if(fdGear) fdGear.value = FD_CONFIG.gearRatio;
+  const fdCirc = document.getElementById('inFdWheelCirc');
+  if(fdCirc) fdCirc.value = FD_CONFIG.wheelCircMm;
+  const fdDiv = document.getElementById('inFdRpmDivisor');
+  if(fdDiv) fdDiv.value = FD_CONFIG.rpmDivisor;
+  const fdInv = document.getElementById('inFdInvertCurrent');
+  if(fdInv) fdInv.checked = !!FD_CONFIG.invertCurrent;
+  const bmsSel = document.getElementById('inBmsProtoType');
+  if(bmsSel) bmsSel.value = _bmsProtocolType;
+  toggleFardriverSettingsFields(CONTROLLER_TYPE);
   document.getElementById('inDeltaSelWarn').value = DELTA_SEL_WARN;
   document.getElementById('inDeltaSelCrit').value = DELTA_SEL_CRIT;
   // Mark active theme swatch
   const curTheme = localStorage.getItem('color_theme')||'default';
   document.querySelectorAll('.theme-swatch').forEach(s=>s.classList.toggle('active',s.dataset.theme===curTheme));
   document.getElementById('settingsModal').classList.add('show');
+}
+function toggleFardriverSettingsFields(val){
+  const wrap = document.getElementById('fdSettingsWrap');
+  if(wrap) wrap.style.display = (val === 'fardriver' || fardriverData.connected) ? 'block' : 'none';
 }
 
 // Preset resolusi umum untuk layar instrumen motor. Rasio dibiarkan beragam
@@ -23671,6 +24502,25 @@ function saveSettings(){
   const motorLeChar = document.getElementById('inMotorLeCharUuid').value.trim();
   localStorage.setItem('motor_le_service_uuid', motorLeSvc);
   localStorage.setItem('motor_le_char_uuid', motorLeChar);
+  const ctSel = document.getElementById('inControllerType');
+  if(ctSel){
+    CONTROLLER_TYPE = (ctSel.value === 'fardriver') ? 'fardriver' : 'gesits';
+    localStorage.setItem('controller_type', CONTROLLER_TYPE);
+  }
+  const fdGearEl = document.getElementById('inFdGearRatio');
+  if(fdGearEl){ FD_CONFIG.gearRatio = Math.max(0.1, parseFloat(fdGearEl.value) || 1.0); localStorage.setItem('fd_gear_ratio', FD_CONFIG.gearRatio); }
+  const fdCircEl = document.getElementById('inFdWheelCirc');
+  if(fdCircEl){ FD_CONFIG.wheelCircMm = Math.max(500, parseFloat(fdCircEl.value) || 1450); localStorage.setItem('fd_wheel_circ_mm', FD_CONFIG.wheelCircMm); }
+  const fdDivEl = document.getElementById('inFdRpmDivisor');
+  if(fdDivEl){ FD_CONFIG.rpmDivisor = Math.max(1, parseInt(fdDivEl.value, 10) || 1); localStorage.setItem('fd_rpm_divisor', FD_CONFIG.rpmDivisor); }
+  const fdInvEl = document.getElementById('inFdInvertCurrent');
+  if(fdInvEl){ FD_CONFIG.invertCurrent = !!fdInvEl.checked; localStorage.setItem('fd_invert_current', FD_CONFIG.invertCurrent ? '1' : '0'); }
+  const bmsSel = document.getElementById('inBmsProtoType');
+  if(bmsSel && bmsSel.value !== _bmsProtocolType){
+    setBmsProtocolType(bmsSel.value);
+  }
+  _fdUpdatePairUI();
+  renderConnStrip();
   log('Settings disimpan ✓','sys');
   closeModal('settingsModal');
   if(canInitMap()&&!mapInitialized){

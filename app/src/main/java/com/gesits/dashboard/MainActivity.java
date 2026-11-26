@@ -104,6 +104,9 @@ public class MainActivity extends Activity {
     // BLE GATT client khusus ESP32 #2 — BMS ORI. Terpisah dari ESP32 CAN utama.
     private Esp32Battery2BleManager esp32Battery2Manager;
 
+    // BLE GATT client khusus kontroler Fardriver (dongle BLE UART FF00/FFE0).
+    private FardriverBleManager fardriverManager;
+
     // File chooser (buat <input type="file"> di WebView, mis. upload gambar custom AT+MAPS)
     private ValueCallback<Uri[]> filePathCallback;
     private static final int REQUEST_CODE_FILE_CHOOSER = 51;
@@ -1493,6 +1496,34 @@ public class MainActivity extends Activity {
             if (bmsManager != null) bmsManager.writeRawHex(hexString);
         }
 
+        @JavascriptInterface
+        public void bmsSetType(String type) {
+            if (bmsManager != null) bmsManager.setBmsType(type);
+        }
+
+        // ══════════════════════════════════════════════
+        // FARDRIVER CONTROLLER — BLE GATT (FF00 / FFE0)
+        // ══════════════════════════════════════════════
+        @JavascriptInterface
+        public void fardriverStartScan(boolean showAll) {
+            if (fardriverManager != null) fardriverManager.startScan(showAll);
+        }
+
+        @JavascriptInterface
+        public void fardriverConnectMac(String mac) {
+            if (fardriverManager != null) fardriverManager.connect(mac);
+        }
+
+        @JavascriptInterface
+        public void fardriverDisconnect() {
+            if (fardriverManager != null) fardriverManager.disconnect();
+        }
+
+        @JavascriptInterface
+        public void fardriverWriteRaw(String hexString) {
+            if (fardriverManager != null) fardriverManager.writeRawHex(hexString);
+        }
+
         // ══════════════════════════════════════════════
         // ESP32 CAN Sniffer — jembatan mentah scan/connect/notify, pola
         // identik BMS di atas. Lihat Esp32BleManager.java.
@@ -2375,6 +2406,60 @@ public class MainActivity extends Activity {
             }
         });
 
+        // ══════════════════════════════════════════════
+        // Init Fardriver BLE manager — kontroler motor Fardriver
+        // ══════════════════════════════════════════════
+        fardriverManager = new FardriverBleManager(this, new FardriverBleManager.Callback() {
+            @Override
+            public void onDeviceFound(String name, String mac) {
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.onFardriverDeviceFound && window.onFardriverDeviceFound('" +
+                    name.replace("\\", "\\\\").replace("'", "\\'") +
+                    "','" + mac + "')", null));
+            }
+
+            @Override
+            public void onScanDone() {
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.onFardriverScanDone && window.onFardriverScanDone()", null));
+            }
+
+            @Override
+            public void onConnected(String name) {
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.onFardriverConnected && window.onFardriverConnected('" +
+                    name.replace("\\", "\\\\").replace("'", "\\'") + "')", null));
+            }
+
+            @Override
+            public void onDisconnected() {
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.onFardriverDisconnected && window.onFardriverDisconnected()", null));
+            }
+
+            @Override
+            public void onRawData(String hexString) {
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.onFardriverRawData && window.onFardriverRawData('" +
+                    hexString + "')", null));
+            }
+
+            @Override
+            public void onState(String state, String detail) {
+                final String js = "window.onBleState && window.onBleState('fardriver','" + state + "','" + detail + "')";
+                runOnUiThread(() -> webView.evaluateJavascript(js, null));
+            }
+
+            @Override
+            public void onLog(String message) {
+                android.util.Log.d("GesitsFardriverBle", message);
+                final String safe = message.replace("\\", "\\\\").replace("'", "\\'")
+                    .replace("\n", " ").replace("\r", "");
+                runOnUiThread(() -> webView.evaluateJavascript(
+                    "window.log && window.log('" + safe + "','err')", null));
+            }
+        });
+
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onGeolocationPermissionsShowPrompt(
@@ -2808,6 +2893,7 @@ public class MainActivity extends Activity {
         if (bmsManager != null) { bmsManager.disconnect(); bmsManager = null; }
         if (esp32Manager != null) { esp32Manager.disconnect(); esp32Manager = null; }
         if (esp32Battery2Manager != null) { esp32Battery2Manager.disconnect(); esp32Battery2Manager = null; }
+        if (fardriverManager != null) { fardriverManager.disconnect(); fardriverManager = null; }
         if (serviceBound) {
             unbindService(serviceConn);
             serviceBound = false;
