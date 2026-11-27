@@ -5919,15 +5919,45 @@ function statsSvgIcon(name){
     <div style="font-size:13px;font-weight:600;margin-bottom:8px"><span style="display:inline-flex;width:13px;height:13px;vertical-align:-2px;margin-right:5px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="13" x2="23" y2="11"/></svg></span>Estimasi Energi & Jarak</div>
     <div style="font-size:12px;font-weight:700;color:var(--green);margin:10px 0 6px">Baterai 1 · MID / BMS Jikong</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="uuid-field"><label>Voltase Nominal (V)</label><input id="inBatt1NomV" type="number" step="0.1" inputmode="decimal" placeholder="72"></div>
-      <div class="uuid-field"><label>Kapasitas (Ah)</label><input id="inBatt1Capacity" type="number" step="0.1" inputmode="decimal" placeholder="20"></div>
+      <div class="uuid-field"><label>Voltase Nominal (V)</label><input id="inBatt1NomV" type="number" step="0.1" inputmode="decimal" placeholder="72" oninput="updateParallelCompPreview()"></div>
+      <div class="uuid-field"><label>Kapasitas (Ah)</label><input id="inBatt1Capacity" type="number" step="0.1" inputmode="decimal" placeholder="20" oninput="updateParallelCompPreview()"></div>
     </div>
     <div style="font-size:12px;font-weight:700;color:#29b6f6;margin:10px 0 6px">Baterai 2 · ESP32 #2 / BMS ORI</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <div class="uuid-field"><label>Voltase Nominal (V)</label><input id="inBatt2NomV" type="number" step="0.1" inputmode="decimal" placeholder="72"></div>
-      <div class="uuid-field"><label>Kapasitas (Ah)</label><input id="inBatt2Capacity" type="number" step="0.1" inputmode="decimal" placeholder="20"></div>
+      <div class="uuid-field"><label>Voltase Nominal (V)</label><input id="inBatt2NomV" type="number" step="0.1" inputmode="decimal" placeholder="72" oninput="updateParallelCompPreview()"></div>
+      <div class="uuid-field"><label>Kapasitas (Ah)</label><input id="inBatt2Capacity" type="number" step="0.1" inputmode="decimal" placeholder="20" oninput="updateParallelCompPreview()"></div>
     </div>
-    <div class="uuid-tip">💡 Kapasitas Baterai 1 dan 2 disimpan terpisah. SOC gabungan dihitung berbobot energi (V × Ah) bila kedua SOC tersedia.</div>
+    <div class="uuid-field" style="display:flex;align-items:center;gap:10px;margin-top:6px">
+      <input id="inBatt2ParallelNoSensor" type="checkbox" style="width:18px;height:18px;flex:none" onchange="updateParallelCompPreview()">
+      <label for="inBatt2ParallelNoSensor" style="margin:0;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)">Baterai 2 paralel <b>tanpa kabel CAN / sensor BLE</b> (kompensasi arus &amp; kapasitas otomatis)</label>
+    </div>
+    <div id="parallelCompBox" style="display:none;background:rgba(41,182,246,.07);border:1px solid rgba(41,182,246,.28);border-radius:12px;padding:10px 12px;margin:4px 0 10px">
+      <div style="font-size:11.5px;font-weight:700;color:#29b6f6;margin-bottom:8px">⚡ Kompensasi Arus Paralel (Beda C-Rating)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="uuid-field"><label>C-Rating B1 (Terpantau)</label><input id="inBatt1CRate" type="number" step="0.1" min="0.2" max="10" inputmode="decimal" placeholder="1.5" oninput="updateParallelCompPreview()"></div>
+        <div class="uuid-field"><label>C-Rating B2 (Tanpa CAN)</label><input id="inBatt2CRate" type="number" step="0.1" min="0.2" max="10" inputmode="decimal" placeholder="1.0" oninput="updateParallelCompPreview()"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1.25fr 0.75fr;gap:8px;align-items:end">
+        <div class="uuid-field">
+          <label>Metode Porsi Arus B1</label>
+          <select id="inBattShareMode" onchange="updateParallelCompPreview()" style="width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:12px;outline:none">
+            <option value="auto">Otomatis (Ah × C-Rating)</option>
+            <option value="manual">Manual (% Arus B1)</option>
+          </select>
+        </div>
+        <div class="uuid-field"><label>Porsi B1 (%)</label><input id="inBatt1SharePct" type="number" step="0.5" min="15" max="95" inputmode="decimal" placeholder="75" oninput="updateParallelCompPreview()"></div>
+      </div>
+      <div class="uuid-field" style="display:flex;align-items:center;gap:10px;margin:4px 0 6px">
+        <input id="inParallelIdleClamp" type="checkbox" style="width:17px;height:17px;flex:none">
+        <label for="inParallelIdleClamp" style="margin:0;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--text)">Abaikan arus penyeimbang (&lt;2A) saat motor berhenti</label>
+      </div>
+      <div id="parallelCompPreview" style="font-size:11px;line-height:1.5;color:var(--text);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:7px 9px">—</div>
+    </div>
+    <div class="uuid-field" style="display:flex;align-items:center;gap:10px;margin:4px 0 8px">
+      <input id="inSmartRangeEnabled" type="checkbox" style="width:18px;height:18px;flex:none">
+      <label for="inSmartRangeEnabled" style="margin:0;text-transform:none;letter-spacing:0;font-size:12px;color:var(--text)"><b>Smart Range:</b> pakai tren konsumsi 2 km terakhir + rata-rata trip</label>
+    </div>
+    <div class="uuid-tip">💡 Kapasitas Baterai 1 dan 2 disimpan terpisah. Jika B2 paralel tanpa CAN diaktifkan, sisa energi ikut menghitung B1+B2 dan arus/daya B1 dikalikan faktor kompensasi C-rating.</div>
     <div class="uuid-field">
       <label>Referensi Konsumsi (Wh/km)</label>
       <input id="inRefWhKm" type="number" step="0.1" inputmode="decimal" placeholder="28">
@@ -7468,6 +7498,14 @@ if(!Number.isFinite(BATTERY2_NOMINAL_V)) BATTERY2_NOMINAL_V = BATTERY1_NOMINAL_V
 // alias legacy untuk kompatibilitas kode lama
 let BATTERY_CAPACITY_AH = BATTERY1_CAPACITY_AH;
 let BATTERY_NOMINAL_V = BATTERY1_NOMINAL_V;
+// KOMPENSASI PARALEL TANPA SENSOR B2 + SMART RANGE
+let BATT2_PARALLEL_NO_SENSOR = localStorage.getItem('batt2_parallel_nosensor') === '1';
+let BATT1_C_RATE = Math.max(0.2, parseFloat(localStorage.getItem('batt1_c_rate')) || 1.5);
+let BATT2_C_RATE = Math.max(0.2, parseFloat(localStorage.getItem('batt2_c_rate')) || 1.0);
+let BATT_SHARE_MODE = (localStorage.getItem('batt_share_mode') === 'manual') ? 'manual' : 'auto';
+let BATT1_SHARE_PCT = Math.min(95, Math.max(15, parseFloat(localStorage.getItem('batt1_share_pct')) || 75));
+let PARALLEL_IDLE_CLAMP = localStorage.getItem('parallel_idle_clamp') !== '0';
+let SMART_RANGE_ENABLED = localStorage.getItem('smart_range_enabled') !== '0';
 let REF_WHKM = parseFloat(localStorage.getItem('ref_wh_km')) || 28;
 const OCM_HARDCODED_API_KEY = '458735a8-b4b1-416e-ab59-51843a45c0b4';
 let OCM_API_KEY = OCM_HARDCODED_API_KEY || localStorage.getItem('ocm_api_key') || '';
@@ -8440,6 +8478,22 @@ function getActiveBatteries(){
   return out;
 }
 
+function computeParallelB1SharePct(ah1, c1, ah2, c2){
+  const g1 = Math.max(0.1, Number(ah1)||20) * Math.max(0.1, Number(c1)||1);
+  const g2 = Math.max(0.1, Number(ah2)||20) * Math.max(0.1, Number(c2)||1);
+  return Math.min(95, Math.max(15, (g1 / (g1 + g2)) * 100));
+}
+function getActiveB1SharePct(){
+  if(BATT_SHARE_MODE === 'manual') return Math.min(95, Math.max(15, Number(BATT1_SHARE_PCT)||75));
+  return computeParallelB1SharePct(BATTERY1_CAPACITY_AH, BATT1_C_RATE, BATTERY2_CAPACITY_AH, BATT2_C_RATE);
+}
+function getParallelCurrentMultiplier(){
+  if(!BATT2_PARALLEL_NO_SENSOR) return 1;
+  if(!battery1Available() || battery2Available()) return 1;
+  const pct = getActiveB1SharePct();
+  return Math.min(6, Math.max(1, 100 / pct));
+}
+
 function getEffVbat(){
   const act=getActiveBatteries();
   if(act.length===2){
@@ -8455,15 +8509,22 @@ function getEffVbat(){
 }
 function getEffIbat(){
   const act=getActiveBatteries();
-  if(act.length) return act.reduce((a,b)=>a+b.i,0);
+  if(act.length){
+    const k = getParallelCurrentMultiplier();
+    return act.reduce((a,b)=>a + b.i * (b.id===1 ? k : 1), 0);
+  }
   const last=Number(motoData.ibat);
-  return (isConnected && Number.isFinite(last))?last:null;
+  if(isConnected && Number.isFinite(last)){
+    return BATT2_PARALLEL_NO_SENSOR && !battery2Available() ? last * getParallelCurrentMultiplier() : last;
+  }
+  return null;
 }
-// Daya total bertanda (W): negatif = discharge, positif = charge/regen. Σ V×I per baterai.
+// Daya total bertanda (W): negatif = discharge, positif = charge/regen. Σ V×I per baterai (+ kompensasi paralel).
 function getEffPowerSigned(){
   const act=getActiveBatteries();
   if(!act.length) return null;
-  return act.reduce((a,b)=>a+b.v*b.i,0);
+  const k = getParallelCurrentMultiplier();
+  return act.reduce((a,b)=>a + b.v * b.i * (b.id===1 ? k : 1), 0);
 }
 function getEffTbat(){
   const src=getBattery1Source();
@@ -8948,7 +9009,15 @@ function updateHeroCardNew(){
   const b1P=getBattery1Power(), b2P=getBattery2Power();
   const hb1=document.getElementById('heroB1Info'), hb2=document.getElementById('heroB2Info');
   if(hb1) hb1.textContent=fmtBatteryInfo(b1Soc,b1V,b1P);
-  if(hb2) hb2.textContent=fmtBatteryInfo(b2Soc,b2V,b2P);
+  if(hb2){
+    if(BATT2_PARALLEL_NO_SENSOR && !battery2Available()){
+      const k = getParallelCurrentMultiplier();
+      const b2EstP = (b1P!=null && k>1) ? Math.round(b1P*(k-1)) : null;
+      hb2.textContent = `Paralel · ${BATTERY2_CAPACITY_AH}Ah` + (b2EstP!=null ? ` · ~${b2EstP}W` : ` (×${k.toFixed(2)})`);
+    } else {
+      hb2.textContent=fmtBatteryInfo(b2Soc,b2V,b2P);
+    }
+  }
   const rangeTxtRaw = document.getElementById('rangeVal') ? document.getElementById('rangeVal').textContent : '—';
   // rangeTxtRaw sudah berisi unit "km" (mis. "154.3 km"), tapi template
   // hero-mid-range juga nampilin literal " km" sendiri — kalau digabung apa
@@ -11999,8 +12068,8 @@ function estimateSocAtDest(routeDistKm, opts){
     extra = estimateRouteEnergy(opts.route, opts.elev || _routeElevFor(opts.route));
     whNeeded = extra.wh;
   } else {
-    const _e = getTripEfficiencyData().whKm;
-    const eff = _e!=null ? _e : REF_WHKM;
+    const sm = (typeof getSmartEfficiencyWhKm==='function') ? getSmartEfficiencyWhKm() : null;
+    const eff = sm ? sm.whKm : (getTripEfficiencyData().whKm || REF_WHKM);
     whNeeded = routeDistKm * eff;
   }
   const whRemain = (getEffSoc()/100) * cap;
@@ -12014,8 +12083,8 @@ function estimateSocAtDest(routeDistKm, opts){
 // ============================================================
 function getCurrentPredictedRange(){
   if(getEffSoc()===null) return null;
-  const _e = getTripEfficiencyData().whKm;
-  const eff = _e!=null ? _e : REF_WHKM;
+  const sm = (typeof getSmartEfficiencyWhKm==='function') ? getSmartEfficiencyWhKm() : null;
+  const eff = sm ? sm.whKm : (getTripEfficiencyData().whKm || REF_WHKM);
   const whRemain = (getEffSoc()/100) * getFullCapacityWh();
   return (whRemain / eff).toFixed(1);
 }
@@ -12382,11 +12451,13 @@ function updateLivePowerSummary(){
 function getBattery1FullWh(){ return BATTERY1_NOMINAL_V * BATTERY1_CAPACITY_AH; }
 function getBattery2FullWh(){ return BATTERY2_NOMINAL_V * BATTERY2_CAPACITY_AH; }
 function getInstalledCapacityWh(){ return getBattery1FullWh() + getBattery2FullWh(); }
-// Kapasitas yg ikut dihitung = hanya baterai yg SOC-nya tersedia saat ini.
+// Kapasitas yg ikut dihitung = baterai yg SOC-nya tersedia, PLUS baterai 2 bila mode paralel tanpa CAN aktif.
 function getFullCapacityWh(){
   let w=0;
-  if(getBattery1Soc()!=null) w+=getBattery1FullWh();
-  if(getBattery2Soc()!=null) w+=getBattery2FullWh();
+  const hasB1 = getBattery1Soc()!=null;
+  const hasB2 = getBattery2Soc()!=null;
+  if(hasB1) w+=getBattery1FullWh();
+  if(hasB2 || (BATT2_PARALLEL_NO_SENSOR && hasB1)) w+=getBattery2FullWh();
   return w>0 ? w : getInstalledCapacityWh();
 }
 function getBattery1Soc(){
@@ -12496,6 +12567,27 @@ function pushWidgetUpdate(){
   }catch(e){ /* diam-diam gagal, widget bukan fitur kritikal */ }
 }
 
+function getSmartEfficiencyWhKm(){
+  const _eff = getTripEfficiencyData();
+  const k = getParallelCurrentMultiplier();
+  const parTag = (BATT2_PARALLEL_NO_SENSOR && !battery2Available() && k > 1.01) ? (' · Paralel ×' + k.toFixed(2)) : '';
+  if(_eff.available){
+    if(SMART_RANGE_ENABLED && _liveWin.length >= 3){
+      let winKm = 0, winWh = 0;
+      for(const x of _liveWin){ winKm += x.km; winWh += x.wh; }
+      if(winKm >= 0.35 && winWh > 0){
+        const rawRoll = winWh / winKm;
+        const clampedRoll = Math.max(_eff.whKm * 0.45, Math.min(_eff.whKm * 1.85, Math.max(10, Math.min(120, rawRoll))));
+        const wRoll = Math.min(0.60, 0.25 + 0.35 * Math.min(1, winKm / LIVE_WIN_KM));
+        const blended = clampedRoll * wRoll + _eff.whKm * (1 - wRoll);
+        return { whKm: blended, source: 'Smart' + parTag, rollWhKm: clampedRoll, tripWhKm: _eff.whKm };
+      }
+    }
+    return { whKm: _eff.whKm, source: 'trip aktual' + parTag, rollWhKm: null, tripWhKm: _eff.whKm };
+  }
+  return { whKm: REF_WHKM, source: 'referensi' + parTag, rollWhKm: null, tripWhKm: null };
+}
+
 function updateRangeEstimate(){
   const effSoc = getEffSoc();
   if(effSoc===undefined || effSoc===null){
@@ -12507,17 +12599,10 @@ function updateRangeEstimate(){
   }
   const fullCapacityWh    = getFullCapacityWh();
   const energyRemainingWh = (effSoc/100) * fullCapacityWh;
-  const tripDistKm        = getTripKm();
 
-  // Σ P×t (real-time integration) dibagi trip km — SATU sumber yg sama dgn
-  // Wh/km, Ah/km, km/Ah di seluruh app (getTripEfficiencyData()). Mulai dihitung
-  // begitu trip>0 & energi>0, gak nunggu 0,3 km, dan gak ada lagi cabang ΔSOC
-  // terpisah (dulu bikin angka Range beda sendiri dari Wh/km yg ditampilkan).
-  const _eff = getTripEfficiencyData();
-  const hasRealData = _eff.available;
-  let efficiency, effSource;
-  if(hasRealData){ efficiency = _eff.whKm; effSource = 'trip aktual'; }
-  else { efficiency = REF_WHKM; effSource = 'referensi'; }
+  const smartEff = getSmartEfficiencyWhKm();
+  const efficiency = smartEff.whKm;
+  const effSource = smartEff.source;
 
   const rangeKm = efficiency > 0 ? energyRemainingWh / efficiency : 0;
   lastRangeKm = rangeKm; // dipakai AT+TRIP (kirim sisa jarak ke layar dashboard motor)
@@ -13976,7 +14061,7 @@ let tripAhB2  = parseFloat(localStorage.getItem('trip_ah_b2'))  || 0;
 let tripKmInt = parseFloat(localStorage.getItem('trip_km_int')) || 0; // jarak hasil integrasi kecepatan
 let _integTs = null, _integSaveTs = 0;
 const _liveWin = [];              // jendela rolling {km,wh,ah}
-const LIVE_WIN_KM = 1;            // panjang jendela rolling
+const LIVE_WIN_KM = 2.0;          // panjang jendela rolling (2 km untuk Smart Range)
 let userSpeedKmh = null, userSpeedTs = 0; // kecepatan GPS (fallback bila motor tidak tersambung)
 
 function getTripSpeedKmh(){
@@ -14030,19 +14115,30 @@ function batteryIntegrationTick(){
   if(dKm>0) tripKmInt+=dKm;
 
   let dWh=0, dAh=0, dRegen=0, dCharge=0, pNow=0;
+  const parMul = getParallelCurrentMultiplier();
   for(const b of act){
     // Sampel arus/tegangan yang lebih tua dari 4 dtk tidak diintegrasi (sebelumnya nilai terakhir "ditahan" sampai 10 dtk,
     // sehingga arus puncak yang basi dikali waktu lama -> energi membengkak saat polling tersendat).
     if(_battSampleAgeMs(b.id) > INTEG_STALE_MS) continue;
-    const i=b.i, p=b.v*i;
+    const i=b.i, mul=(b.id===1 ? parMul : 1);
     if(Math.abs(i)<0.05) continue;          // noise sensor
+    // Saat dua pack paralel beda C-rating diam (spd <= 1), arus kecil < 2A biasanya arus penyeimbang antar-pack -> jangan kotori efisiensi trip
+    if(BATT2_PARALLEL_NO_SENSOR && PARALLEL_IDLE_CLAMP && b.id===1 && spd<=1 && Math.abs(i)<2.0) continue;
+    const p = b.v * i;
+    const pEff = p * mul;
     if(i<0){                                 // discharge = konsumsi
-      const wh=Math.abs(p)*dtH, ah=Math.abs(i)*dtH;
-      if(b.id===1){ tripWhB1+=wh; tripAhB1+=ah; } else { tripWhB2+=wh; tripAhB2+=ah; }
-      dWh+=wh; dAh+=ah; pNow+=Math.abs(p);
-    }else if(spd>1){ dRegen+=p*dtH; tripMaxRegenW=Math.max(tripMaxRegenW,p); }
-    else{ dCharge+=p*dtH; }
-    tripMaxCurrentA=Math.max(tripMaxCurrentA,Math.abs(i));
+      const whBase=Math.abs(p)*dtH, ahBase=Math.abs(i)*dtH;
+      const whTotal=whBase*mul, ahTotal=ahBase*mul;
+      if(b.id===1){
+        tripWhB1+=whBase; tripAhB1+=ahBase;
+        if(mul>1){ tripWhB2+=(whTotal-whBase); tripAhB2+=(ahTotal-ahBase); }
+      } else {
+        tripWhB2+=whBase; tripAhB2+=ahBase;
+      }
+      dWh+=whTotal; dAh+=ahTotal; pNow+=Math.abs(pEff);
+    }else if(spd>1){ dRegen+=pEff*dtH; tripMaxRegenW=Math.max(tripMaxRegenW,pEff); }
+    else{ dCharge+=pEff*dtH; }
+    tripMaxCurrentA=Math.max(tripMaxCurrentA,Math.abs(i*mul));
   }
   getTripKm(); // jaga acuan jarak hibrida tetap segar tiap detik
   tripEnergyWh   = tripWhB1+tripWhB2;
@@ -15714,9 +15810,18 @@ function renderBatteryIcon(pct){
   pctEl.textContent = Math.round(pct)+'%';
   const s1=getBattery1Soc(), s2=getBattery2Soc();
   const sub=document.getElementById('battHeroSub');
-  if(sub) sub.textContent = (s1!=null&&s2!=null)?'SOC Total · B1 + B2':(s1!=null?'SOC · B1 saja':(s2!=null?'SOC · B2 saja':'SOC Total'));
+  if(sub){
+    if(s1!=null && s2!=null) sub.textContent = 'SOC Total · B1 + B2';
+    else if(s1!=null && BATT2_PARALLEL_NO_SENSOR) sub.textContent = `SOC · B1 + B2 Paralel (${Math.round(getFullCapacityWh())} Wh)`;
+    else if(s1!=null) sub.textContent = 'SOC · B1 saja';
+    else if(s2!=null) sub.textContent = 'SOC · B2 saja';
+    else sub.textContent = 'SOC Total';
+  }
   const split=document.getElementById('battHeroSplit');
-  if(split) split.textContent='B1 '+(s1!=null?Math.round(s1)+'%':'—')+' · B2 '+(s2!=null?Math.round(s2)+'%':'—');
+  if(split){
+    const b2Lbl = s2!=null ? Math.round(s2)+'%' : (BATT2_PARALLEL_NO_SENSOR && s1!=null ? `Paralel ${BATTERY2_CAPACITY_AH}Ah` : '—');
+    split.textContent='B1 '+(s1!=null?Math.round(s1)+'%':'—')+' · B2 '+b2Lbl;
+  }
   // SOH di bawah bar (diisi dari SOC update juga)
   const soh = getEffSoh();
   const lbl = document.getElementById('battHeroLabel');
@@ -24483,6 +24588,39 @@ function slideConfirmEnd(e){
   }
 }
 
+function updateParallelCompPreview(){
+  const on = !!document.getElementById('inBatt2ParallelNoSensor')?.checked;
+  const box = document.getElementById('parallelCompBox');
+  if(box) box.style.display = on ? '' : 'none';
+  if(!on) return;
+  const v1 = parseFloat(document.getElementById('inBatt1NomV')?.value) || 72;
+  const a1 = parseFloat(document.getElementById('inBatt1Capacity')?.value) || 20;
+  const v2 = parseFloat(document.getElementById('inBatt2NomV')?.value) || v1;
+  const a2 = parseFloat(document.getElementById('inBatt2Capacity')?.value) || 20;
+  const c1 = Math.max(0.2, parseFloat(document.getElementById('inBatt1CRate')?.value) || 1.5);
+  const c2 = Math.max(0.2, parseFloat(document.getElementById('inBatt2CRate')?.value) || 1.0);
+  const mode = document.getElementById('inBattShareMode')?.value === 'manual' ? 'manual' : 'auto';
+  const shareEl = document.getElementById('inBatt1SharePct');
+  let sharePct = computeParallelB1SharePct(a1, c1, a2, c2);
+  if(shareEl){
+    shareEl.readOnly = (mode !== 'manual');
+    shareEl.style.opacity = (mode !== 'manual') ? '0.75' : '1';
+    if(mode === 'auto'){
+      shareEl.value = sharePct.toFixed(1);
+    } else {
+      sharePct = Math.min(95, Math.max(15, parseFloat(shareEl.value) || sharePct));
+    }
+  }
+  const mul = 100 / sharePct;
+  const totAh = a1 + a2;
+  const totWh = (v1 * a1) + (v2 * a2);
+  const prev = document.getElementById('parallelCompPreview');
+  if(prev){
+    prev.innerHTML = `Kapasitas Total: <b>${totAh.toFixed(1)} Ah (${Math.round(totWh)} Wh)</b><br>`
+      + `Porsi arus B1: <b>${sharePct.toFixed(1)}%</b> · Porsi B2: <b>${(100-sharePct).toFixed(1)}%</b> · Pengali Arus/Daya Total: <b style="color:#29b6f6">×${mul.toFixed(2)}</b>`;
+  }
+}
+
 // ═══════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════
@@ -24500,6 +24638,14 @@ function openSettings(){
   document.getElementById('inBatt1Capacity').value=BATTERY1_CAPACITY_AH;
   document.getElementById('inBatt2NomV').value=BATTERY2_NOMINAL_V;
   document.getElementById('inBatt2Capacity').value=BATTERY2_CAPACITY_AH;
+  document.getElementById('inBatt2ParallelNoSensor').checked=!!BATT2_PARALLEL_NO_SENSOR;
+  document.getElementById('inBatt1CRate').value=BATT1_C_RATE;
+  document.getElementById('inBatt2CRate').value=BATT2_C_RATE;
+  document.getElementById('inBattShareMode').value=BATT_SHARE_MODE;
+  document.getElementById('inBatt1SharePct').value=BATT1_SHARE_PCT.toFixed(1);
+  document.getElementById('inParallelIdleClamp').checked=!!PARALLEL_IDLE_CLAMP;
+  document.getElementById('inSmartRangeEnabled').checked=!!SMART_RANGE_ENABLED;
+  updateParallelCompPreview();
   document.getElementById('inRefWhKm').value=REF_WHKM;
   document.getElementById('inPhysOn').checked=PHYS.on;
   document.getElementById('inMassBike').value=PHYS.bike;
@@ -24683,6 +24829,23 @@ function saveSettings(){
   BATTERY1_NOMINAL_V=nomV1; BATTERY1_CAPACITY_AH=capAh1;
   BATTERY2_NOMINAL_V=nomV2; BATTERY2_CAPACITY_AH=capAh2;
   BATTERY_NOMINAL_V=BATTERY1_NOMINAL_V; BATTERY_CAPACITY_AH=BATTERY1_CAPACITY_AH; REF_WHKM=refWh; OCM_API_KEY=ocmKey;
+  BATT2_PARALLEL_NO_SENSOR = !!document.getElementById('inBatt2ParallelNoSensor')?.checked;
+  BATT1_C_RATE = Math.max(0.2, Math.min(10, parseFloat(document.getElementById('inBatt1CRate')?.value) || 1.5));
+  BATT2_C_RATE = Math.max(0.2, Math.min(10, parseFloat(document.getElementById('inBatt2CRate')?.value) || 1.0));
+  BATT_SHARE_MODE = (document.getElementById('inBattShareMode')?.value === 'manual') ? 'manual' : 'auto';
+  const rawShare = parseFloat(document.getElementById('inBatt1SharePct')?.value);
+  BATT1_SHARE_PCT = BATT_SHARE_MODE === 'manual' && Number.isFinite(rawShare)
+    ? Math.min(95, Math.max(15, rawShare))
+    : computeParallelB1SharePct(capAh1, BATT1_C_RATE, capAh2, BATT2_C_RATE);
+  PARALLEL_IDLE_CLAMP = !!document.getElementById('inParallelIdleClamp')?.checked;
+  SMART_RANGE_ENABLED = !!document.getElementById('inSmartRangeEnabled')?.checked;
+  localStorage.setItem('batt2_parallel_nosensor', BATT2_PARALLEL_NO_SENSOR ? '1' : '0');
+  localStorage.setItem('batt1_c_rate', BATT1_C_RATE);
+  localStorage.setItem('batt2_c_rate', BATT2_C_RATE);
+  localStorage.setItem('batt_share_mode', BATT_SHARE_MODE);
+  localStorage.setItem('batt1_share_pct', BATT1_SHARE_PCT);
+  localStorage.setItem('parallel_idle_clamp', PARALLEL_IDLE_CLAMP ? '1' : '0');
+  localStorage.setItem('smart_range_enabled', SMART_RANGE_ENABLED ? '1' : '0');
   SNAP_W=snapW; SNAP_H=snapH;
   DASH_TOGGLES=dashToggles; DASH_ROTATE_SEC=dashRotateSec;
   MATRIX_ENABLED=matrixEnabled; MATRIX_CUSTOM_TEXT=matrixCustomText; MATRIX_TOGGLES=matrixToggles;
