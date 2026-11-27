@@ -44,14 +44,18 @@ public class FardriverBleManager {
 
     private static final UUID FD_SERVICE_FFE0 =
         UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
+    private static final UUID FD_CHAR_FFEC =
+        UUID.fromString("0000ffec-0000-1000-8000-00805f9b34fb");
     private static final UUID FD_CHAR_FFE1 =
         UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
     private static final UUID FD_CHAR_FFE2 =
         UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb");
-    private static final UUID FD_CHAR_FFEC =
-        UUID.fromString("0000ffec-0000-1000-8000-00805f9b34fb");
     private static final UUID FD_CHAR_FFF2 =
         UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
+    private static final UUID FD_SERVICE_FFF0 =
+        UUID.fromString("0000fff0-0000-1000-8000-00805f9b34fb");
+    private static final UUID FD_CHAR_FFF1 =
+        UUID.fromString("0000fff1-0000-1000-8000-00805f9b34fb");
 
     private static final UUID CCCD_UUID =
         UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
@@ -180,7 +184,7 @@ public class FardriverBleManager {
                 if (uuids != null) {
                     for (ParcelUuid p : uuids) {
                         UUID u = p.getUuid();
-                        if (FD_SERVICE_FF00.equals(u) || FD_SERVICE_FFE0.equals(u)) return true;
+                        if (FD_SERVICE_FFE0.equals(u) || FD_SERVICE_FF00.equals(u) || FD_SERVICE_FFF0.equals(u)) return true;
                     }
                 }
                 n = rec.getDeviceName();
@@ -190,7 +194,7 @@ public class FardriverBleManager {
             }
             if (n != null) {
                 String l = n.toLowerCase(Locale.ROOT);
-                for (String k : new String[]{"fardriver", "fd-", "fd_", "yq", "bldc", "controller", "motor", "ble", "uart", "hc-", "dx-"}) {
+                for (String k : new String[]{"fardriver", "fd-", "fd_", "far", "yq", "bldc", "controller", "motor", "ble", "uart", "hc-", "dx-"}) {
                     if (l.contains(k)) return true;
                 }
             }
@@ -543,49 +547,89 @@ public class FardriverBleManager {
             notifyChar = null;
             writeChar = null;
 
-            // 1) Prioritas FF00 (dongle Fardriver standar: FF01 notify, FF02 write)
+            // 1) Prioritas utama Fardriver: service 0000FFE0, notify 0000FFEC (atau FFE1 / notify lain di FFE0)
+            BluetoothGattService chosenSvc = null;
             for (BluetoothGattService svc : g.getServices()) {
-                if (!FD_SERVICE_FF00.equals(svc.getUuid())) continue;
-                BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FF01);
-                BluetoothGattCharacteristic w = svc.getCharacteristic(FD_CHAR_FF02);
-                if (isNotifyCapable(n)) notifyChar = n;
-                if (isWriteCapable(w)) writeChar = w;
-                if (notifyChar != null && writeChar != null) break;
-            }
-            // 2) Fallback FFE0 (adapter BLE UART umum: FFE1 notify, FFE2/FFF2/FFE1 write)
-            if (notifyChar == null) {
-                for (BluetoothGattService svc : g.getServices()) {
-                    if (!FD_SERVICE_FFE0.equals(svc.getUuid())) continue;
-                    BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FFE1);
-                    if (isNotifyCapable(n)) notifyChar = n;
-                    // Dongle FarDash/Fardriver: FFE0 + FFEC (notify). Ambil notify apa pun di service ini.
-                    if (notifyChar == null) {
-                        BluetoothGattCharacteristic ec = svc.getCharacteristic(FD_CHAR_FFEC);
-                        if (isNotifyCapable(ec)) notifyChar = ec;
+                if (!FD_SERVICE_FFE0.equals(svc.getUuid())) continue;
+                BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FFEC);
+                if (!isNotifyCapable(n)) n = svc.getCharacteristic(FD_CHAR_FFE1);
+                if (!isNotifyCapable(n)) {
+                    for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                        if (isNotifyCapable(ch)) { n = ch; break; }
                     }
-                    if (notifyChar == null) {
+                }
+                if (n != null) {
+                    notifyChar = n;
+                    chosenSvc = svc;
+                    for (UUID wUuid : new UUID[]{FD_CHAR_FFE2, FD_CHAR_FFF2, FD_CHAR_FFE1, FD_CHAR_FFEC}) {
+                        BluetoothGattCharacteristic w = svc.getCharacteristic(wUuid);
+                        if (isWriteCapable(w)) { writeChar = w; break; }
+                    }
+                    if (writeChar == null) {
                         for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
-                            if (isNotifyCapable(ch)) { notifyChar = ch; break; }
+                            if (isWriteCapable(ch)) { writeChar = ch; break; }
                         }
                     }
-                    for (UUID wUuid : new UUID[]{FD_CHAR_FFE2, FD_CHAR_FFF2, FD_CHAR_FFE1}) {
-                        if (writeChar == null) {
-                            BluetoothGattCharacteristic w = svc.getCharacteristic(wUuid);
-                            if (isWriteCapable(w)) writeChar = w;
-                        }
-                    }
-                    if (notifyChar != null) break;
+                    break;
                 }
             }
-            // 3) Fallback generik: cari characteristic notify & write non-standard-GAP/GATT
+            // 2) Fallback FF00 (dongle UART FF01 notify, FF02 write, atau notify lain di FF00)
+            if (notifyChar == null) {
+                for (BluetoothGattService svc : g.getServices()) {
+                    if (!FD_SERVICE_FF00.equals(svc.getUuid())) continue;
+                    BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FF01);
+                    if (!isNotifyCapable(n)) {
+                        for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                            if (isNotifyCapable(ch)) { n = ch; break; }
+                        }
+                    }
+                    if (n != null) {
+                        notifyChar = n;
+                        chosenSvc = svc;
+                        BluetoothGattCharacteristic w = svc.getCharacteristic(FD_CHAR_FF02);
+                        if (isWriteCapable(w)) writeChar = w;
+                        if (writeChar == null) {
+                            for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                                if (isWriteCapable(ch)) { writeChar = ch; break; }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            // 3) Fallback FFF0 (FFF1 notify / notify lain di FFF0)
+            if (notifyChar == null) {
+                for (BluetoothGattService svc : g.getServices()) {
+                    if (!FD_SERVICE_FFF0.equals(svc.getUuid())) continue;
+                    BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FFF1);
+                    if (!isNotifyCapable(n)) {
+                        for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                            if (isNotifyCapable(ch)) { n = ch; break; }
+                        }
+                    }
+                    if (n != null) {
+                        notifyChar = n;
+                        chosenSvc = svc;
+                        for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                            if (isWriteCapable(ch)) { writeChar = ch; break; }
+                        }
+                        break;
+                    }
+                }
+            }
+            // 4) Fallback generik: cari characteristic notify & write non-standard-GAP/GATT
             if (notifyChar == null) {
                 for (BluetoothGattService svc : g.getServices()) {
                     String su = svc.getUuid().toString().toLowerCase(Locale.US);
-                    if (su.startsWith("00001800") || su.startsWith("00001801")) continue;
+                    if (su.startsWith("00001800") || su.startsWith("00001801") || su.startsWith("0000180a")) continue;
                     for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
-                        if (notifyChar == null && isNotifyCapable(ch)) notifyChar = ch;
+                        if (notifyChar == null && isNotifyCapable(ch)) {
+                            notifyChar = ch;
+                            chosenSvc = svc;
+                        }
                         if (writeChar == null && isWriteCapable(ch)) writeChar = ch;
                     }
+                    if (notifyChar != null) break;
                 }
             }
             if (notifyChar == null) {
@@ -596,6 +640,10 @@ public class FardriverBleManager {
             if (writeChar == null && isWriteCapable(notifyChar)) {
                 writeChar = notifyChar;
             }
+            callback.onLog("Fardriver: GATT svc="
+                + (chosenSvc != null ? chosenSvc.getUuid().toString().substring(4, 8) : "?")
+                + " notify=" + notifyChar.getUuid().toString().substring(4, 8)
+                + (writeChar != null ? " write=" + writeChar.getUuid().toString().substring(4, 8) : ""));
 
             try {
                 g.setCharacteristicNotification(notifyChar, true);

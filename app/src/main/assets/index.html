@@ -6222,10 +6222,17 @@ function statsSvgIcon(name){
       </select>
     </div>
     <div id="fdSettingsWrap">
+      <div class="uuid-field">
+        <label>Mode Hitung Kecepatan</label>
+        <select id="inFdSpeedMode" style="width:100%">
+          <option value="manual">Manual (Pole Pairs, Rasio Gear &amp; Keliling Ban)</option>
+          <option value="auto">Otomatis (Parameter Roda 0xD0 dari Controller)</option>
+        </select>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="uuid-field"><label>Pole Pairs</label><input id="inFdPolePairs" type="number" step="1" min="1" max="64" inputmode="numeric" placeholder="4"></div>
         <div class="uuid-field"><label>Rasio Gear</label><input id="inFdGearRatio" type="number" step="0.05" min="0.1" max="20" inputmode="decimal" placeholder="1.0"></div>
         <div class="uuid-field"><label>Ban (mm)</label><input id="inFdWheelCirc" type="number" step="10" min="500" max="3000" inputmode="numeric" placeholder="1450"></div>
-        <div class="uuid-field"><label>Pole Pairs</label><input id="inFdPolePairs" type="number" step="1" min="1" max="64" inputmode="numeric" placeholder="4"></div>
       </div>
       <div class="preset-row" style="margin-bottom:8px">
         <button type="button" class="preset-btn" onclick="document.getElementById('inFdWheelCirc').value=1360">Ring 12" (1360)</button>
@@ -6236,7 +6243,7 @@ function statsSvgIcon(name){
         <input id="inFdInvertCurrent" type="checkbox" style="width:18px;height:18px;flex:none">
         <label style="margin:0">Balik arah arus Fardriver (+ ↔ -)</label>
       </div>
-      <div class="uuid-tip">💡 Hub drive langsung pakai Rasio Gear <b>1.0</b>; motor mid-drive pakai rasio transmisi (mis. 2.8). Kecepatan = |raw| × 4 ÷ pole pairs ÷ rasio gear × keliling ban × 60 ÷ 1000 (km/j). Isi Pole Pairs sesuai motor (default 4).</div>
+      <div class="uuid-tip">💡 Mode manual: <code>|raw| × 4 ÷ polePairs ÷ rasioGear × keliling(m) × 60 ÷ 1000</code>. Default Fardriver 4 pole pairs; hub motor umumnya 16–28 pole pairs, rasio gear 1.0.</div>
     </div>
     <div class="uuid-field" style="margin-top:8px">
       <label>Jenis / Protokol BMS</label>
@@ -6368,8 +6375,8 @@ const IS_NATIVE_ANDROID = (typeof Android !== 'undefined');
 //    "https://drive.google.com/uc?export=download&id=FILE_ID" (bukan link
 //    /view biasa) — ini skip 1 langkah tapi TETAP bisa kena halaman
 //    konfirmasi kalau ukuran filenya di atas ambang scan Google (~25MB).
-const APP_VERSION = '1.0.1.31';
-const APP_VERSION_CODE = 12;
+const APP_VERSION = '1.0.1.29';
+const APP_VERSION_CODE = 10;
 const PWA_WEB_URL = 'https://gesits.pages.dev';
 const PWA_VERSION_URL = 'https://gesits.pages.dev/version.json';
 const APK_DOWNLOAD_URL = 'https://github.com/armadit-eng/gesits-dashboard/releases/latest';
@@ -8233,6 +8240,7 @@ const FD_SERVICE_FF00     = '0000ff00-0000-1000-8000-00805f9b34fb';
 const FD_CHAR_FF01        = '0000ff01-0000-1000-8000-00805f9b34fb';
 const FD_CHAR_FF02        = '0000ff02-0000-1000-8000-00805f9b34fb';
 const FD_SERVICE_FFE0     = '0000ffe0-0000-1000-8000-00805f9b34fb';
+const FD_CHAR_FFEC        = '0000ffec-0000-1000-8000-00805f9b34fb';
 const FD_CHAR_FFE1        = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
 const JK_CMD_GET_DEVICE_INFO = 0x97;
@@ -8251,15 +8259,17 @@ function _getBmsProtoMeta(){ return BMS_PROTO_META[_bmsProtocolType] || BMS_PROT
 let CONTROLLER_TYPE = localStorage.getItem('controller_type') || 'gesits';
 if(CONTROLLER_TYPE !== 'gesits' && CONTROLLER_TYPE !== 'fardriver') CONTROLLER_TYPE = 'gesits';
 const FD_CONFIG = {
+  speedMode:     (localStorage.getItem('fd_speed_mode') === 'auto') ? 'auto' : 'manual',
+  polePairs:     Math.max(1, parseInt(localStorage.getItem('fd_pole_pairs'), 10) || 4),
   gearRatio:     Math.max(0.1, parseFloat(localStorage.getItem('fd_gear_ratio')) || 1.0),
   wheelCircMm:   Math.max(500, parseFloat(localStorage.getItem('fd_wheel_circ_mm')) || 1450),
-  polePairs:     Math.max(1, parseInt(localStorage.getItem('fd_pole_pairs'), 10) || 4),
   invertCurrent: localStorage.getItem('fd_invert_current') === '1'
 };
 const fardriverData = {
   connected:false, deviceName:'', lastRxAt:0, connectionState:'offline',
-  rpm:0, spd:0, vbat:null, ibat:null, tinv:null, tmot:null, throttle:0,
-  parkState:null, driveMode:null, errMask:0
+  rpm:0, spd:0, vbat:null, ibat:null, tinv:null, tmot:null, throttle:0, soc:null,
+  parkState:null, driveMode:null, brakeActive:false, gearRaw:0, driveDir:'N', errMask:0,
+  phaseCurrentA:null, phaseCurrentC:null, wheelParams:null
 };
 
 const bmsData = {
@@ -14522,8 +14532,8 @@ function _fdUpdatePairUI(){
   const forgetBtn = document.getElementById('fardriverForgetBtn');
   const calibEl = document.getElementById('fdCalibSummary');
   if(calibEl){
-    calibEl.textContent = `Rasio ${FD_CONFIG.gearRatio} · Ban ${FD_CONFIG.wheelCircMm} mm` +
-      ` · ${FD_CONFIG.polePairs} pole pairs`;
+    calibEl.textContent = (FD_CONFIG.speedMode==='auto' ? 'Auto 0xD0' : `PP ${FD_CONFIG.polePairs}`)
+      + ` · Rasio ${FD_CONFIG.gearRatio} · Ban ${FD_CONFIG.wheelCircMm} mm`;
   }
   if(forgetBtn) forgetBtn.style.display = (IS_NATIVE_ANDROID && localStorage.getItem('fardriver_last_mac')) ? 'block' : 'none';
   if(fardriverData.connected){
@@ -14556,7 +14566,7 @@ async function fardriverConnect(){
     log('Fardriver: membuka dialog pilih device BLE...','sys');
     _fdDevice = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [FD_SERVICE_FF00, FD_SERVICE_FFE0]
+      optionalServices: [FD_SERVICE_FFE0, FD_SERVICE_FF00, FFF0_SERVICE_UUID]
     });
     _fdDevice.addEventListener('gattserverdisconnected', _fdOnDisconnected);
     await _fdSetupWebGatt();
@@ -14569,21 +14579,44 @@ async function fardriverConnect(){
 async function _fdSetupWebGatt(){
   _fdServer = await _fdDevice.gatt.connect();
   _fdNotifyChar = null; _fdWriteChar = null;
+  const pickFromService = async (svc, preferredNotifyUuids, preferredWriteUuids) => {
+    for(const u of preferredNotifyUuids){
+      if(!_fdNotifyChar) _fdNotifyChar = await _bmsTryChar(svc, u);
+    }
+    for(const u of preferredWriteUuids){
+      if(!_fdWriteChar) _fdWriteChar = await _bmsTryChar(svc, u);
+    }
+    if(!_fdNotifyChar || !_fdWriteChar){
+      try{
+        const allChars = await svc.getCharacteristics();
+        for(const ch of allChars){
+          const p = ch.properties || {};
+          if(!_fdNotifyChar && (p.notify || p.indicate)) _fdNotifyChar = ch;
+          if(!_fdWriteChar && (p.write || p.writeWithoutResponse)) _fdWriteChar = ch;
+        }
+      }catch(e){}
+    }
+  };
   try{
-    const svc = await _fdServer.getPrimaryService(FD_SERVICE_FF00);
-    _fdNotifyChar = await _bmsTryChar(svc, FD_CHAR_FF01);
-    _fdWriteChar  = await _bmsTryChar(svc, FD_CHAR_FF02);
+    const services = await _fdServer.getPrimaryServices(FD_SERVICE_FFE0);
+    for(const svc of services){
+      await pickFromService(svc, [FD_CHAR_FFEC, FD_CHAR_FFE1], [CHAR_FFE2_UUID, JK_CHAR_WRITE_UUID, FD_CHAR_FFE1]);
+      if(_fdNotifyChar) break;
+    }
   }catch(e){}
   if(!_fdNotifyChar){
     try{
-      const services = await _fdServer.getPrimaryServices(FD_SERVICE_FFE0);
-      for(const svc of services){
-        if(!_fdNotifyChar) _fdNotifyChar = await _bmsTryChar(svc, FD_CHAR_FFE1);
-        if(!_fdWriteChar) _fdWriteChar = await _bmsTryChar(svc, CHAR_FFE2_UUID) || await _bmsTryChar(svc, JK_CHAR_WRITE_UUID);
-      }
+      const svc = await _fdServer.getPrimaryService(FD_SERVICE_FF00);
+      await pickFromService(svc, [FD_CHAR_FF01], [FD_CHAR_FF02]);
     }catch(e){}
   }
-  if(!_fdNotifyChar) throw new Error('Characteristic notify Fardriver (FF01/FFE1) tidak ditemukan');
+  if(!_fdNotifyChar){
+    try{
+      const svc = await _fdServer.getPrimaryService(FFF0_SERVICE_UUID);
+      await pickFromService(svc, [CHAR_FFF1_UUID], [JK_CHAR_WRITE_UUID]);
+    }catch(e){}
+  }
+  if(!_fdNotifyChar) throw new Error('Characteristic notify Fardriver (FFEC/FFE1/FF01) tidak ditemukan');
   if(!_fdWriteChar) _fdWriteChar = _fdNotifyChar;
   await _fdNotifyChar.startNotifications();
   _fdNotifyChar.addEventListener('characteristicvaluechanged', ev=>{
@@ -14648,13 +14681,34 @@ function fardriverConnectNative(name, mac){
   catch(e){ log('Fardriver: fardriverConnectMac gagal — '+e.message,'err'); }
 }
 
+let _fdConnectedAt = 0, _fdNoDataTimer = null;
+function _fdWriteHex(hex){
+  if(IS_NATIVE_ANDROID){
+    try{ if(typeof Android!=='undefined' && Android.fardriverWriteRaw) Android.fardriverWriteRaw(hex); }catch(e){}
+    return;
+  }
+  if(_fdWriteChar){
+    try{
+      const b = new Uint8Array(hex.length/2);
+      for(let k=0;k<b.length;k++) b[k] = parseInt(hex.substr(k*2,2),16);
+      if(_fdWriteChar.properties && _fdWriteChar.properties.writeWithoutResponse && _fdWriteChar.writeValueWithoutResponse){
+        _fdWriteChar.writeValueWithoutResponse(b).catch(()=>{});
+      } else if(_fdWriteChar.writeValue){
+        _fdWriteChar.writeValue(b).catch(()=>{});
+      }
+    }catch(e){}
+  }
+}
+
 window.onFardriverConnected = function(name){
+  _fdConnectedAt = Date.now();
   fardriverData.connected = true;
   fardriverData.connectionState = 'connected';
-  fardriverData.lastRxAt = Date.now();
+  fardriverData.lastRxAt = 0;
   fardriverData.deviceName = name || fardriverData.deviceName || 'Fardriver BLE';
   _fdReconnectAttempts = 0;
   clearTimeout(_fdReconnectTimer);
+  clearTimeout(_fdNoDataTimer);
   const classicBusy = (!!serialPort || (IS_NATIVE_ANDROID && Android.isConnected && Android.isConnected()));
   if(!classicBusy){
     motorConnMode = 'fardriver';
@@ -14665,12 +14719,18 @@ window.onFardriverConnected = function(name){
   }
   _fdUpdatePairUI();
   showToast('🎛️ Fardriver tersambung');
-  log('Fardriver: tersambung ✓','sys');
+  log('Fardriver: tersambung ✓ — menunggu stream frame 0xAA (FFEC/FFE1)...','sys');
+  _fdNoDataTimer = setTimeout(()=>{
+    if(!fardriverData.connected || fardriverData.lastRxAt > _fdConnectedAt) return;
+    log('Fardriver: belum ada stream masuk — mengirim trigger status 0x07 (pastikan kontak motor ON)...','sys');
+    _fdWriteHex('AA07F8000000A956');
+  }, 2200);
 };
 
 function fardriverDisconnect(){
   _fdWasManualDisconnect = true;
   clearTimeout(_fdReconnectTimer);
+  clearTimeout(_fdNoDataTimer);
   _fdReconnectAttempts = 0;
   if(IS_NATIVE_ANDROID){
     try{ Android.fardriverDisconnect(); }catch(e){}
@@ -14690,6 +14750,7 @@ function forgetFardriver(){
 }
 
 function _fdOnDisconnected(){
+  clearTimeout(_fdNoDataTimer);
   fardriverData.connected = false;
   fardriverData.connectionState = _fdWasManualDisconnect ? 'offline' : 'reconnecting';
   _fdNotifyChar = null; _fdWriteChar = null;
@@ -14734,17 +14795,70 @@ window.onFardriverRawData = function(hexString){
   }catch(e){ log('Fardriver: decode raw error — '+e.message,'err'); }
 };
 
-// Tabel id (6 bit) -> alamat memori controller (55 entri, dari jackhumbert/fardriver-controllers)
-const FD_ADDR = [
-  0xE2,0xE8,0xEE,0x00,0x06,0x0C,0x12,
-  0xE2,0xE8,0xEE,0x18,0x1E,0x24,0x2A,
-  0xE2,0xE8,0xEE,0x30,0x5D,0x63,0x69,
-  0xE2,0xE8,0xEE,0x7C,0x82,0x88,0x8E,
-  0xE2,0xE8,0xEE,0x94,0x9A,0xA0,0xA6,
-  0xE2,0xE8,0xEE,0xAC,0xB2,0xB8,0xBE,
-  0xE2,0xE8,0xEE,0xC4,0xCA,0xD0,
-  0xE2,0xE8,0xEE,0xD6,0xDC,0xF4,0xFA
+// Tabel 55 entri pemetaan id (0..54) -> alamat memori Fardriver (fardriver-controllers / FarDash)
+const FD_FLASH_READ_ADDR = [
+  0xE2, 0xE8, 0xEE, 0x00, 0x06, 0x0C, 0x12,
+  0xE2, 0xE8, 0xEE, 0x18, 0x1E, 0x24, 0x2A,
+  0xE2, 0xE8, 0xEE, 0x30, 0x5D, 0x63, 0x69,
+  0xE2, 0xE8, 0xEE, 0x7C, 0x82, 0x88, 0x8E,
+  0xE2, 0xE8, 0xEE, 0x94, 0x9A, 0xA0, 0xA6,
+  0xE2, 0xE8, 0xEE, 0xAC, 0xB2, 0xB8, 0xBE,
+  0xE2, 0xE8, 0xEE, 0xC4, 0xCA, 0xD0,
+  0xE2, 0xE8, 0xEE, 0xD6, 0xDC, 0xF4, 0xFA
 ];
+
+function _i24le(buf, o){
+  const v = buf[o] | (buf[o+1] << 8) | (buf[o+2] << 16);
+  return (v & 0x800000) ? (v - 0x1000000) : v;
+}
+
+// Tabel referensi CRC16 Modbus (poly 0xA001 reflected) dipakai oleh ComputeCRC (a=0x3C, b=0x7F)
+const FD_CRC_HI = [
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40,0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,
+  0x00,0xC1,0x81,0x40,0x01,0xC0,0x80,0x41,0x01,0xC0,0x80,0x41,0x00,0xC1,0x81,0x40
+];
+const FD_CRC_LO = [
+  0x00,0xC0,0xC1,0x01,0xC3,0x03,0x02,0xC2,0xC6,0x06,0x07,0xC7,0x05,0xC5,0xC4,0x04,
+  0xCC,0x0C,0x0D,0xCD,0x0F,0xCF,0xCE,0x0E,0x0A,0xCA,0xCB,0x0B,0xC9,0x09,0x08,0xC8,
+  0xD8,0x18,0x19,0xD9,0x1B,0xDB,0xDA,0x1A,0x1E,0xDE,0xDF,0x1F,0xDD,0x1D,0x1C,0xDC,
+  0x14,0xD4,0xD5,0x15,0xD7,0x17,0x16,0xD6,0xD2,0x12,0x13,0xD3,0x11,0xD1,0xD0,0x10,
+  0xF0,0x30,0x31,0xF1,0x33,0xF3,0xF2,0x32,0x36,0xF6,0xF7,0x37,0xF5,0x35,0x34,0xF4,
+  0x3C,0xFC,0xFD,0x3D,0xFF,0x3F,0x3E,0xFE,0xFA,0x3A,0x3B,0xFB,0x39,0xF9,0xF8,0x38,
+  0x28,0xE8,0xE9,0x29,0xEB,0x2B,0x2A,0xEA,0xEE,0x2E,0x2F,0xEF,0x2D,0xED,0xEC,0x2C,
+  0xE4,0x24,0x25,0xE5,0x27,0xE7,0xE6,0x26,0x22,0xE2,0xE3,0x23,0xE1,0x21,0x20,0xE0,
+  0xA0,0x60,0x61,0xA1,0x63,0xA3,0xA2,0x62,0x66,0xA6,0xA7,0x67,0xA5,0x65,0x64,0xA4,
+  0x6C,0xAC,0xAD,0x6D,0xAF,0x6F,0x6E,0xAE,0xAA,0x6A,0x6B,0xAB,0x69,0xA9,0xA8,0x68,
+  0x78,0xB8,0xB9,0x79,0xBB,0x7B,0x7A,0xBA,0xBE,0x7E,0x7F,0xBF,0x7D,0xBD,0xBC,0x7C,
+  0xB4,0x74,0x75,0xB5,0x77,0xB7,0xB6,0x76,0x72,0xB2,0xB3,0x73,0xB1,0x71,0x70,0xB0,
+  0x50,0x90,0x91,0x51,0x93,0x53,0x52,0x92,0x96,0x56,0x57,0x97,0x55,0x95,0x94,0x54,
+  0x9C,0x5C,0x5D,0x9D,0x5F,0x9F,0x9E,0x5E,0x5A,0x9A,0x9B,0x5B,0x99,0x59,0x58,0x98,
+  0x88,0x48,0x49,0x89,0x4B,0x8B,0x8A,0x4A,0x4E,0x8E,0x8F,0x4F,0x8D,0x4D,0x4C,0x8C,
+  0x44,0x84,0x85,0x45,0x87,0x47,0x46,0x86,0x82,0x42,0x43,0x83,0x41,0x81,0x80,0x40
+];
+
+function _fdCrc16Table(buf, off){
+  let a = 0x3C, b = 0x7F;
+  for(let k=0;k<14;k++){
+    const idx = a ^ buf[off+k];
+    a = b ^ FD_CRC_HI[idx];
+    b = FD_CRC_LO[idx];
+  }
+  return (a & 0xFF) | ((b & 0xFF) << 8);
+}
 
 function _fdCrc16(buf, off, initVal){
   let crc = initVal;
@@ -14770,67 +14884,102 @@ function _fdHandleRawChunk(chunk){
     if(_fdRxBuf[i] !== 0xAA){ i++; continue; }
     const subId = _fdRxBuf[i+1] & 0x3F;
     const remCrc = _u16(_fdRxBuf, i+14);
-    const okCrc = (remCrc === _fdCrc16(_fdRxBuf, i, 0x7F3C)) || (remCrc === _fdCrc16(_fdRxBuf, i, 0xFFFF));
-    const okNext = (i + 16 < _fdRxBuf.length && _fdRxBuf[i+16] === 0xAA && subId <= 0x36);
-    if(!okCrc && !okNext){ i++; continue; }
+    const okCrc = (remCrc === _fdCrc16Table(_fdRxBuf, i)) || (remCrc === _fdCrc16(_fdRxBuf, i, 0xFFFF));
+    if(!okCrc){ i++; continue; }
+    if(subId >= FD_FLASH_READ_ADDR.length){ i += 16; continue; }
 
+    const addr = FD_FLASH_READ_ADDR[subId];
+    const d = i + 2; // awal 12-byte payload (byte0..byte11)
     window._motorLastDataAt = Date.now();
     if(_fdFrameLogCount < 25){
       _fdFrameLogCount++;
-      log(`Fardriver pkt 0x${subId.toString(16).padStart(2,'0')} crc=${okCrc?'OK':'SYNC'}`,'sys');
+      log(`Fardriver id=${subId} addr=0x${addr.toString(16).toUpperCase()} crc=OK`,'sys');
     }
 
-    // data[0..11] ada di _fdRxBuf[i+2 .. i+13]; alamat dari tabel FD_ADDR
-    const addr = subId < FD_ADDR.length ? FD_ADDR[subId] : -1;
-    const d = i + 2;
     if(addr === 0xE2){
-      // byte0: bit0 D, bit1 R, bit2-3 gear | byte6-7 MeasureSpeed (rpm)
-      const b0 = _fdRxBuf[d];
-      const dirD = (b0 & 0x01) !== 0, dirR = (b0 & 0x02) !== 0;
-      const gear = (b0 >> 2) & 0x03;
-      const isPark = !dirD && !dirR;
-      const modeVal = gear === 1 ? 0 : (gear === 2 ? 1 : (gear >= 3 ? 2 : 0));
-      const rpm = Math.abs(_i16le(_fdRxBuf, d + 6));
-      if(rpm < 30000){
-        // |raw| x 4 / polePairs / rasioGear -> rpm roda
-        const wheelRpm = rpm * 4 / Math.max(1, FD_CONFIG.polePairs) / Math.max(0.1, FD_CONFIG.gearRatio);
-        const spdKmh = Math.min(220, Math.max(0, +(wheelRpm * (FD_CONFIG.wheelCircMm / 1000) * 0.06).toFixed(1)));
-        fardriverData.rpm = rpm;
-        fardriverData.spd = spdKmh;
-        parseResponse('AT+RPM=' + rpm, 'fardriver');
-        parseResponse('AT+SPD=' + spdKmh, 'fardriver');
-      }
+      // byte0: bit0 D, bit1 R, bit2-3 gear; byte2-3: bit error (byte3 bit7 rem); byte6-7: MeasureSpeed (rpm, basis 4 pole pair)
+      const b0 = _fdRxBuf[d + 0];
+      const isD = (b0 & 0x01) !== 0;
+      const isR = (b0 & 0x02) !== 0;
+      const gearRaw = (b0 >> 2) & 0x03;
+      const isBrake = (_fdRxBuf[d + 3] & 0x80) !== 0;
+      const errMask = _u16(_fdRxBuf, d + 2) & 0x7FFF;
+      const rawSpeed = _i16le(_fdRxBuf, d + 6);
+      const absRaw = Math.abs(rawSpeed);
+
+      fardriverData.gearRaw = gearRaw;
+      fardriverData.driveDir = isD ? 'D' : (isR ? 'R' : 'N');
+      fardriverData.brakeActive = isBrake;
+      fardriverData.errMask = errMask;
+
+      const isPark = (!isD && !isR);
+      const modeVal = Math.min(2, Math.max(0, gearRaw > 0 ? (gearRaw - 1) : 0));
+      fardriverData.parkState = isPark ? 1 : 0;
+      fardriverData.driveMode = modeVal;
       parseResponse('AT+PARK=' + (isPark ? 1 : 0), 'fardriver');
       parseResponse('AT+MODE=' + modeVal, 'fardriver');
+
+      if(absRaw < 40000){
+        const pp = Math.max(1, FD_CONFIG.polePairs);
+        const effRpm = Math.round(absRaw * 4 / pp);
+        const wp = fardriverData.wheelParams;
+        let spdRaw = -1;
+        if(FD_CONFIG.speedMode === 'auto' && wp && wp.wheelRadius > 0 && wp.rateRatio > 0){
+          spdRaw = absRaw * (0.00376991136 * (wp.wheelRadius * 1270 + wp.wheelWidth * wp.wheelRatio) / wp.rateRatio);
+        }
+        if(spdRaw < 0){
+          // Mode manual: |raw| * 4 / polePairs / rasioGear * keliling(m) * 60 / 1000 km/j
+          spdRaw = absRaw * 4 / pp / Math.max(0.1, FD_CONFIG.gearRatio) * (FD_CONFIG.wheelCircMm / 1000) * 60 / 1000;
+        }
+        const spdKmh = Math.min(220, Math.max(0, +spdRaw.toFixed(1)));
+        fardriverData.rpm = effRpm;
+        fardriverData.spd = spdKmh;
+        parseResponse('AT+RPM=' + effRpm, 'fardriver');
+        parseResponse('AT+SPD=' + spdKmh, 'fardriver');
+      }
     } else if(addr === 0xE8){
-      // byte0-1 tegangan /10 (V) | byte4-5 arus baterai /4 (A)
-      const vp = +(_u16(_fdRxBuf, d) / 10).toFixed(1);
-      const rawI = +(_i16le(_fdRxBuf, d + 4) / 4).toFixed(1);
-      const ip = +(FD_CONFIG.invertCurrent ? -rawI : rawI).toFixed(1);
+      // byte0-1: tegangan ÷ 10 (V); byte4-5: arus baterai ÷ 4 (A, bertanda)
+      const vp = +(_u16(_fdRxBuf, d + 0) * 0.1).toFixed(1);
+      const rawI = +(_i16le(_fdRxBuf, d + 4) * 0.25).toFixed(1);
+      const ip = +(FD_CONFIG.invertCurrent ? rawI : -rawI).toFixed(1);
       if(vp >= 10 && vp <= 180){
         fardriverData.vbat = vp;
         fardriverData.ibat = ip;
         parseResponse('AT+VBAT=' + vp, 'fardriver');
         parseResponse('AT+IBAT=' + ip, 'fardriver');
       }
+    } else if(addr === 0xEE){
+      // arus fasa A/C (24-bit signed)
+      fardriverData.phaseCurrentA = +(_i24le(_fdRxBuf, d + 0) * 0.25).toFixed(1);
+      fardriverData.phaseCurrentC = +(_i24le(_fdRxBuf, d + 4) * 0.25).toFixed(1);
+    } else if(addr === 0xD0){
+      // parameter roda versi controller (AddrD0: WheelRatio d+4, WheelRadius d+5, WheelWidth d+7, RateRatio d+8..9)
+      fardriverData.wheelParams = {
+        wheelRatio:  _fdRxBuf[d + 4],
+        wheelRadius: _fdRxBuf[d + 5],
+        wheelWidth:  _fdRxBuf[d + 7],
+        rateRatio:   _u16(_fdRxBuf, d + 8)
+      };
     } else if(addr === 0xD6){
-      // byte10-11 suhu MOSFET/controller (C)
+      // byte10-11: suhu MOSFET/controller (°C)
       const tCtrl = _i16le(_fdRxBuf, d + 10);
-      if(tCtrl >= -25 && tCtrl <= 160){
+      if(tCtrl >= -25 && tCtrl <= 180){
         fardriverData.tinv = tCtrl;
         parseResponse('AT+TINV=' + tCtrl, 'fardriver');
       }
     } else if(addr === 0xF4){
-      // byte0-1 suhu motor (C) | byte3 SOC (%)
-      const tMot = _i16le(_fdRxBuf, d);
-      if(tMot >= -25 && tMot <= 210){
+      // byte0-1: suhu motor (°C); byte3: SOC (%)
+      const tMot = _i16le(_fdRxBuf, d + 0);
+      if(tMot >= -25 && tMot <= 220){
         fardriverData.tmot = tMot;
         parseResponse('AT+TMOT=' + tMot, 'fardriver');
       }
       const soc = _fdRxBuf[d + 3];
-      if(soc <= 100){
+      if(soc >= 0 && soc <= 100){
         fardriverData.soc = soc;
-        parseResponse('AT+SOC=' + soc, 'fardriver');
+        if(!bmsData.connected){
+          parseResponse('AT+SOC=' + soc, 'fardriver');
+        }
       }
     }
     i += 16;
@@ -24342,12 +24491,14 @@ function openSettings(){
   document.getElementById('inMotorLeCharUuid').value    = localStorage.getItem('motor_le_char_uuid')||'';
   const ctSel = document.getElementById('inControllerType');
   if(ctSel) ctSel.value = CONTROLLER_TYPE;
+  const fdMode = document.getElementById('inFdSpeedMode');
+  if(fdMode) fdMode.value = FD_CONFIG.speedMode;
+  const fdPp = document.getElementById('inFdPolePairs');
+  if(fdPp) fdPp.value = FD_CONFIG.polePairs;
   const fdGear = document.getElementById('inFdGearRatio');
   if(fdGear) fdGear.value = FD_CONFIG.gearRatio;
   const fdCirc = document.getElementById('inFdWheelCirc');
   if(fdCirc) fdCirc.value = FD_CONFIG.wheelCircMm;
-  const fdPP = document.getElementById('inFdPolePairs');
-  if(fdPP) fdPP.value = FD_CONFIG.polePairs;
   const fdInv = document.getElementById('inFdInvertCurrent');
   if(fdInv) fdInv.checked = !!FD_CONFIG.invertCurrent;
   const bmsSel = document.getElementById('inBmsProtoType');
@@ -24529,12 +24680,14 @@ function saveSettings(){
     CONTROLLER_TYPE = (ctSel.value === 'fardriver') ? 'fardriver' : 'gesits';
     localStorage.setItem('controller_type', CONTROLLER_TYPE);
   }
+  const fdModeEl = document.getElementById('inFdSpeedMode');
+  if(fdModeEl){ FD_CONFIG.speedMode = (fdModeEl.value === 'auto') ? 'auto' : 'manual'; localStorage.setItem('fd_speed_mode', FD_CONFIG.speedMode); }
+  const fdPpEl = document.getElementById('inFdPolePairs');
+  if(fdPpEl){ FD_CONFIG.polePairs = Math.max(1, parseInt(fdPpEl.value, 10) || 4); localStorage.setItem('fd_pole_pairs', FD_CONFIG.polePairs); }
   const fdGearEl = document.getElementById('inFdGearRatio');
   if(fdGearEl){ FD_CONFIG.gearRatio = Math.max(0.1, parseFloat(fdGearEl.value) || 1.0); localStorage.setItem('fd_gear_ratio', FD_CONFIG.gearRatio); }
   const fdCircEl = document.getElementById('inFdWheelCirc');
   if(fdCircEl){ FD_CONFIG.wheelCircMm = Math.max(500, parseFloat(fdCircEl.value) || 1450); localStorage.setItem('fd_wheel_circ_mm', FD_CONFIG.wheelCircMm); }
-  const fdPPEl = document.getElementById('inFdPolePairs');
-  if(fdPPEl){ FD_CONFIG.polePairs = Math.max(1, parseInt(fdPPEl.value, 10) || 4); localStorage.setItem('fd_pole_pairs', FD_CONFIG.polePairs); }
   const fdInvEl = document.getElementById('inFdInvertCurrent');
   if(fdInvEl){ FD_CONFIG.invertCurrent = !!fdInvEl.checked; localStorage.setItem('fd_invert_current', FD_CONFIG.invertCurrent ? '1' : '0'); }
   const bmsSel = document.getElementById('inBmsProtoType');

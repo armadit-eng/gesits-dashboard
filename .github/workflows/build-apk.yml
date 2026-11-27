@@ -102,23 +102,19 @@ jobs:
               out.write(f"version_name={new_vn}\n")
           EOF
 
-      - name: Prepare debug keystore
+      - name: Prepare debug keystore (fixed signature)
         run: |
           if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > debug.keystore
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | tr -d '\r\n ' | base64 -d > debug.keystore
+            echo "Keystore restored from GitHub Secret DEBUG_KEYSTORE_BASE64"
           elif [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore
-          elif [ ! -f "debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+            tr -d '\r\n ' < debug.keystore.base64 | base64 -d > debug.keystore
+            echo "Keystore restored from repository debug.keystore.base64"
+          else
+            echo "::error::debug.keystore.base64 dan secrets.DEBUG_KEYSTORE_BASE64 tidak ditemukan! Tolak generate keystore acak agar APK tidak bentrok."
+            exit 1
           fi
+          keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | grep -E "Alias name|SHA1|SHA256"
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
