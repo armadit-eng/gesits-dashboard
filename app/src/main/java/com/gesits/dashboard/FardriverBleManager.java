@@ -48,6 +48,8 @@ public class FardriverBleManager {
         UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
     private static final UUID FD_CHAR_FFE2 =
         UUID.fromString("0000ffe2-0000-1000-8000-00805f9b34fb");
+    private static final UUID FD_CHAR_FFEC =
+        UUID.fromString("0000ffec-0000-1000-8000-00805f9b34fb");
     private static final UUID FD_CHAR_FFF2 =
         UUID.fromString("0000fff2-0000-1000-8000-00805f9b34fb");
 
@@ -556,6 +558,16 @@ public class FardriverBleManager {
                     if (!FD_SERVICE_FFE0.equals(svc.getUuid())) continue;
                     BluetoothGattCharacteristic n = svc.getCharacteristic(FD_CHAR_FFE1);
                     if (isNotifyCapable(n)) notifyChar = n;
+                    // Dongle FarDash/Fardriver: FFE0 + FFEC (notify). Ambil notify apa pun di service ini.
+                    if (notifyChar == null) {
+                        BluetoothGattCharacteristic ec = svc.getCharacteristic(FD_CHAR_FFEC);
+                        if (isNotifyCapable(ec)) notifyChar = ec;
+                    }
+                    if (notifyChar == null) {
+                        for (BluetoothGattCharacteristic ch : svc.getCharacteristics()) {
+                            if (isNotifyCapable(ch)) { notifyChar = ch; break; }
+                        }
+                    }
                     for (UUID wUuid : new UUID[]{FD_CHAR_FFE2, FD_CHAR_FFF2, FD_CHAR_FFE1}) {
                         if (writeChar == null) {
                             BluetoothGattCharacteristic w = svc.getCharacteristic(wUuid);
