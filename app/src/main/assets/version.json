@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.31",
-  "versionCode": 12,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.31/GesitsDashboard-v1.0.1.31-vc12-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.31",
-  "notes": "- Add files via upload"
+  "version": "1.0.1.32",
+  "versionCode": 13,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.32/GesitsDashboard-v1.0.1.32-vc13-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.32",
+  "notes": "- feat: add Fardriver controller protocol support"
 }
