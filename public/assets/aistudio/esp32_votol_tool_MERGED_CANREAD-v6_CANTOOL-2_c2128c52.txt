@@ -1,0 +1,4105 @@
+/*
+  Gesits CAN Sniffer - FULL VERSION (v6 + CAN Tool: /cantool)
+  For: Arduino IDE 1.8.19 + ESP32 core 2.0.14 (board: DOIT ESP32 DEVKIT V1 /
+  ESP32 Dev Module), using the standard driver/twai.h API.
+
+  Includes: web dashboard with decoded values, CSV export, physical GPIO
+  indicators (Cruise LED + safety buzzer), Listen-only/Normal mode toggle,
+  and a BLE peripheral for the Gesits companion PWA integration.
+
+  Hardware:
+    ESP32 DOIT  <->  SN65HVD230 CAN Transceiver  <->  CAN bus (CANH/CANL)
+      GPIO21 (TX)  ->  CTX
+      GPIO22 (RX)  ->  CRX
+      3.3V         ->  VCC
+      GND          ->  GND
+
+    Cruise indicator LED : GPIO2  (onboard LED on most ESP32 DevKit boards)
+    Safety warning buzzer: GPIO4  (side stand up + Drive + speed 0)
+
+  Web dashboard: connect phone WiFi to "GesitsCAN-Sniffer" / "sniff1234",
+  browse to http://192.168.4.1/
+
+  BLE (for the PWA): advertises as "Gesits-ESP32-BMS2" (unit B2). Point the app's
+  Settings -> "BT LE Motor" Service/Characteristic UUID fields at:
+    Service:        6e400001-b5a3-f393-e0a9-e50e24dcca9e
+    TX (notify):    6e400003-b5a3-f393-e0a9-e50e24dcca9e
+    RX (write):     6e400002-b5a3-f393-e0a9-e50e24dcca9e
+  Then use the existing "Connect Motor LE" button and pick this device.
+
+  KONTAK RELAY (app toggle "Nyalakan/Matikan Motor"):
+    GPIO26 -> relay module IN (relay switches the ACC/ignition line only,
+              NOT the starter). Send "CONTACT_ON"/"CONTACT_OFF" as plain
+              text over the RX characteristic; ESP32 replies over TX with
+              "CONTACT=1"/"CONTACT=0" so the app can confirm actual state
+              instead of assuming the command worked.
+
+  REMOTE FISIK (opsional — ESP32-C3 Super Mini + 1 tombol tactile):
+    Terpisah dari BLE app, jalan lewat ESP-NOW terenkripsi di WiFi channel
+    1 (lihat setupEspNowRemote()). Firmware pasangannya: lihat file
+    esp32c3_remote_kontak.ino. WAJIB isi REMOTE_MAC[] di sini + ganti
+    ESPNOW_PMK/ESPNOW_LMK sebelum dipakai. Command dari remote tunduk ke
+    safety interlock yang sama dengan app (CONTACT_OFF ditolak kalau motor
+    masih melaju di atas CONTACT_OFF_SPEED_LIMIT_KMH).
+
+  DFPLAYER MINI (tone SFX per state — bukan suara/voice):
+    GPIO16 (RX2) <- DFPlayer TX
+    GPIO17 (TX2) -> DFPlayer RX (disarankan pasang resistor ~1k seri)
+    SD card DFPlayer: folder "01" isi 001.mp3..006.mp3 (lihat DF_TRACK_* di
+    kode). Kalau DFPlayer gak kedetect saat boot, fitur lain (CAN/BLE/relay)
+    tetap jalan normal — cuma tone yang nonaktif.
+
+  MATRIX MAX7219 (nampilin teks yang sama persis dgn AT+NAV di app):
+    App kirim command teks "NAV_TEXT:<isi AT+NAV>" lewat RX characteristic
+    yang SUDAH ADA di atas (sama persis jalur BLE-nya dgn CONTACT_ON/
+    MUSIC_* / NAV_VOICE — bukan koneksi baru). Hardware: 1 papan 32x8 fisik
+    (4 chip MAX7219 cascade internal, papan tetap - bukan disambung sendiri), tipe FC-16,
+    tipe FC-16:
+      MAX7219 DIN -> GPIO23 (software SPI, bukan hardware VSPI -- toleran kabel 50cm)
+      MAX7219 CLK -> GPIO18 (software SPI juga)
+      MAX7219 CS  -> GPIO5
+      MAX7219 VCC -> 5V eksternal (jangan andalkan 5V dev board utk >2 modul)
+      MAX7219 GND -> GND (common ground dgn ESP32)
+    Library tambahan yg perlu di-install: "MD_Parola" + "MD_MAX72XX" (by
+    majicdesigns, lewat Arduino Library Manager).
+*/
+
+#include <WiFi.h>
+#include <esp_wifi.h>
+#include "driver/twai.h"
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <esp_now.h>
+#include "esp_idf_version.h"
+#include <MD_Parola.h>
+#include <MD_MAX72xx.h>
+#include <SPI.h>
+#include <Preferences.h>
+#include <esp_system.h>
+// esp_now.h & esp_idf_version.h SENGAJA ditaruh di paling atas (bareng
+// include lain), BUKAN di dekat kode ESP-NOW di tengah file. Alasan:
+// Arduino/ArduinoDroid otomatis bikin forward declaration semua fungsi
+// (termasuk onEspNowRecv) dan nyisipinnya TEPAT SETELAH blok #include
+// paling atas ini — kalau esp_now.h/esp_idf_version.h ditaruh belakangan,
+// forward declaration otomatis itu gak kenal tipe esp_now_recv_info_t
+// (error "does not name a type") krn dibikin SEBELUM include-nya kebaca.
+
+// ---------------- USER CONFIG ----------------
+
+#define CAN_TX_PIN        GPIO_NUM_21
+#define CAN_RX_PIN        GPIO_NUM_22
+#define CAN_TIMING_CONFIG TWAI_TIMING_CONFIG_250KBITS()   // try 500K/125K if no frames
+
+#define CRUISE_LED_PIN    2   // solid on/off - cruise control status
+#define WARNING_PIN       4   // blinks ~500ms - side stand up + Drive + speed 0
+#define WARNING_BLINK_MS  500
+
+#define CONTACT_RELAY_PIN 26  // relay: switches ACC/ignition contact line ONLY (not starter)
+#define DFPLAYER_RX_PIN 16     // ESP32 GPIO16 (RX2) <- DFPlayer TX
+#define DFPLAYER_TX_PIN 17     // ESP32 GPIO17 (TX2) -> DFPlayer RX (pakai resistor ~1k seri, DFPlayer RX gak 5V-tolerant di semua clone)
+#define DFPLAYER_VOLUME 20     // 0-30
+
+// Matiin dashboard web (WiFi AP) — dicoba OFF krn diduga AP beacon yg
+// nyala terus-menerus (walau gak ada yg connect) ikut makan waktu radio
+// dan bikin ESP-NOW ke remote kadang gagal. BLE/CAN/relay/ESP-NOW tetap
+// jalan normal walau ini di-nol-in. Balikin ke 1 kapan aja kalau mau
+// pakai dashboard-nya lagi (gak perlu ubah kode lain).
+#define ENABLE_WIFI_DASHBOARD 1
+#define ENABLE_DFPLAYER       1   // 0 = DFPlayer tidak diinisialisasi (suara mati, hemat ~1 detik boot)
+#define ENABLE_ESPNOW_REMOTE  0   // 0 = ESP-NOW remote kontak tidak diaktifkan
+
+// SSID & nama BLE unit ini (ESP32 #2 / B2) dibuat BEDA dari ESP32 utama ("Gesits Emulator" / "Gesits-ESP32-CAN")
+// supaya di daftar WiFi HP dan di daftar scan BLE app tidak tertukar.
+const char* AP_SSID     = "Gesits Remote";
+const char* AP_PASSWORD = "emulator1234";
+
+// Matrix MAX7219 — sesuaikan kalau jumlah modul/tipe beda dari default
+// Hardware: 1 papan 32x8 fisik (4 chip MAX7219 cascade internal), tipe FC-16.
+// DIN/CLK pakai hardware VSPI default (GPIO23/GPIO18), CS bisa GPIO bebas.
+//   MAX7219 DIN -> GPIO23 (software SPI, bukan hardware VSPI -- toleran kabel 50cm)
+//   MAX7219 CLK -> GPIO18 (software SPI juga)
+//   MAX7219 CS  -> GPIO5
+//   MAX7219 VCC -> 5V eksternal (jangan andalkan 5V dev board utk >2 modul)
+//   MAX7219 GND -> GND (common ground dgn ESP32)
+// App kirim command teks "NAV_TEXT:<isi AT+NAV>" lewat RX characteristic BLE
+// yang sudah ada (jalur sama dgn CONTACT_ON/MUSIC_*/NAV_VOICE).
+#define MATRIX_HARDWARE_TYPE  MD_MAX72XX::FC16_HW
+#define MATRIX_MAX_DEVICES    4 // 32x8 fisik = 4 chip MAX7219 (32/8=4) - 1 papan tetap, bukan disambung sendiri
+#define MATRIX_CS_PIN         5
+#define MATRIX_DIN_PIN        23 // dipakai sbg software/bit-bang SPI biar tahan kabel panjang (50cm)
+#define MATRIX_CLK_PIN        18 // sama, software SPI - bukan hardware VSPI lagi
+#define MATRIX_SCROLL_SPEED_MS 40
+#define MATRIX_SCROLL_PAUSE_MS 600
+
+// ---------------- VOTOL PROGRAMMER TOOL ----------------
+// Votol EM controllers expose a 250-kbit/s CAN programming/diagnostic
+// interface on CAN-capable models.  The two known "read live data" query
+// frames use standard CAN ID 0x3FF and the controller replies on 0x3FE.
+// Parameter WRITE is intentionally raw-CAN + guarded: the exact parameter
+// map/write sequence varies by controller firmware/model, so this tool
+// does not invent register addresses.  Use captured/verified frames from
+// the matching Votol programming software/controller.
+//
+// IMPORTANT: never write parameters while riding.  The web tool requires
+// an explicit unlock and zero detected speed before a raw CAN write.
+// -------------------------------------------------------
+#define VOTOL_PROG_ID       0x3FF
+#define VOTOL_PROG_REPLY_ID 0x3FE
+#define VOTOL_WRITE_UNLOCK_MS 60000UL
+// -------------------------------------------------------
+
+WiFiServer server(80);
+WiFiClient sseClient;
+bool sseClientActive = false;
+uint32_t frameCount = 0;
+bool warningActive = false;
+bool contactRelayOn = false;   // status relay kontak saat ini (ACC/ignition line saja)
+
+// Telemetry state - updated as CAN frames arrive, broadcast to BLE
+// round-robin, independent of the web dashboard/WiFi clients.
+// (Dipindah ke atas dari posisi aslinya supaya field speedKmh bisa dipakai
+// duluan oleh interlock keamanan di setContactRelay()/ESP-NOW handler.)
+struct Telemetry {
+  float soc = -1, soh = -1, tbat = -1, vbat = -1, ibat = -1, cbat = -1;
+  float tinv = -1, tmot = -1, speedKmh = -1, throttlePct = -1, torqueRaw = 0;
+  float rpm = -1;        // estimasi RPM BLDC (bukan hasil sniff, lihat catatan di parser speed)
+  int   mode = -1;      // 0=Eco, 1=Urban, 2=Sport
+  int   park = -1;      // 1=Park, 0=Drive
+  int   cruise = -1;    // 1=on, 0=off
+  int   rem = -1;       // 1=brake pressed, 0=released
+  int   sidestand = -1; // 1=down(deployed), 0=up(raised)
+} telem;
+
+// ---------------- DFPlayer Mini (tone SFX, bukan suara/voice) ----------------
+// Ditulis pakai protokol serial DFPlayer langsung (bukan library
+// "DFRobotDFPlayerMini") supaya gak perlu install library eksternal apa pun
+// — cukup HardwareSerial bawaan ESP32 core. Semua file ada di folder "01" di
+// SD card (mono MP3 44.1kHz 128kbps). Nomor track = nama file, misal
+// 01/001.mp3 -> df_playFolder(1, 1).
+HardwareSerial dfSerial(2);
+bool dfPlayerReady = false;
+
+#define DF_FOLDER          1   // SFX tone (001-006) & voice navigasi (007-016)
+#define DF_TRACK_CONTACT_ON   1   // 001.mp3 — kontak ON, naik/cerah
+#define DF_TRACK_CONTACT_OFF  2   // 002.mp3 — kontak OFF, turun
+#define DF_TRACK_CRUISE_ON    3   // 003.mp3 — cruise ON, tap 3x + naik
+#define DF_TRACK_CRUISE_OFF   4   // 004.mp3 — cruise OFF, dua nada turun
+#define DF_TRACK_ALARM_MOVE   5   // 005.mp3 — alarm/motor bergerak, siren cepat
+#define DF_TRACK_SIDESTAND    6   // 006.mp3 — peringatan side stand, 3x pulse
+
+#define DF_MUSIC_FOLDER    2   // folder "02" — musik pilihan user, terpisah dari SFX/voice
+
+void bleSendLine(const String& line); // forward declaration — definisi asli ada di bagian BLE di bawah
+
+// Bangun & kirim 1 frame command DFPlayer: 7E FF 06 CMD 00 P1 P2 CKSUM_HI CKSUM_LO EF
+// (format standar modul DFPlayer Mini / YX5300-kompatibel, "feedback"=0/no-ack)
+void df_sendCommand(uint8_t command, uint8_t param1, uint8_t param2) {
+  uint8_t frame[10];
+  frame[0] = 0x7E; frame[1] = 0xFF; frame[2] = 0x06; frame[3] = command;
+  frame[4] = 0x00; frame[5] = param1; frame[6] = param2;
+  uint16_t sum = frame[1] + frame[2] + frame[3] + frame[4] + frame[5] + frame[6];
+  uint16_t checksum = 0xFFFF - sum + 1;
+  frame[7] = (checksum >> 8) & 0xFF; frame[8] = checksum & 0xFF; frame[9] = 0xEF;
+  dfSerial.write(frame, 10);
+}
+
+void df_setVolume(uint8_t vol)              { df_sendCommand(0x06, 0x00, vol); }          // 0-30
+void df_playFolder(uint8_t folder, uint8_t file) { df_sendCommand(0x0F, folder, file); }   // folder/file no.
+void df_reset()                             { df_sendCommand(0x0C, 0x00, 0x00); }
+void df_pause()                             { df_sendCommand(0x0E, 0x00, 0x00); }
+void df_resume()                            { df_sendCommand(0x0D, 0x00, 0x00); }
+void df_stop()                              { df_sendCommand(0x16, 0x00, 0x00); }
+
+void playTone(uint8_t track) {
+  if (!dfPlayerReady) return;
+  df_playFolder(DF_FOLDER, track);
+}
+
+// ---------------- Music Player (folder "02", dikontrol dari app) ----------------
+// NOTE: sengaja TIDAK pakai opcode Next/Prev bawaan DFPlayer (0x01/0x02) krn
+// itu jalan-nya berdasarkan urutan file GLOBAL di seluruh SD card (lintas
+// folder), bisa nyasar ke folder 01 (SFX/voice). Next/Prev di sini full
+// dihitung sendiri (musicCurrentTrack++/--) lalu re-play folder 02 spesifik
+// — jadi dijamin selalu di lingkup folder musik aja.
+int musicCurrentTrack = 1;
+bool musicIsPlaying = false;
+#define MUSIC_TRACK_MIN 1
+#define MUSIC_TRACK_MAX 255
+
+void musicBroadcastState() {
+  bleSendLine("MUSIC_TRACK=" + String(musicCurrentTrack));
+  bleSendLine(String("MUSIC_STATE=") + (musicIsPlaying ? "PLAYING" : "PAUSED"));
+}
+
+void musicPlayTrack(int track) {
+  if (!dfPlayerReady) return;
+  if (track < MUSIC_TRACK_MIN) track = MUSIC_TRACK_MIN;
+  if (track > MUSIC_TRACK_MAX) track = MUSIC_TRACK_MAX;
+  musicCurrentTrack = track;
+  df_playFolder(DF_MUSIC_FOLDER, (uint8_t)musicCurrentTrack);
+  musicIsPlaying = true;
+  musicBroadcastState();
+}
+
+void musicPauseResume() {
+  if (!dfPlayerReady) return;
+  if (musicIsPlaying) { df_pause(); musicIsPlaying = false; }
+  else                { df_resume(); musicIsPlaying = true; }
+  musicBroadcastState();
+}
+
+void musicStopPlayback() {
+  if (!dfPlayerReady) return;
+  df_stop();
+  musicIsPlaying = false;
+  musicBroadcastState();
+}
+
+void musicNextTrack() { musicPlayTrack(musicCurrentTrack + 1); }
+void musicPrevTrack() { musicPlayTrack(musicCurrentTrack - 1); }
+
+void musicSetVolume(int vol) {
+  if (!dfPlayerReady) return;
+  if (vol < 0) vol = 0; if (vol > 30) vol = 30;
+  df_setVolume((uint8_t)vol);
+  bleSendLine("MUSIC_VOL=" + String(vol));
+}
+
+// ---------------- BLE (for PWA integration) ----------------
+#define BLE_DEVICE_NAME         "Gesits-ESP3-REMOTE"
+#define BLE_SERVICE_UUID        "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+#define BLE_CHARACTERISTIC_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e"   // TX: ESP32 -> app (notify)
+#define BLE_CHAR_RX_UUID        "6e400002-b5a3-f393-e0a9-e50e24dcca9e"   // RX: app -> ESP32 (write, command)
+
+BLEServer* bleServer = nullptr;
+BLECharacteristic* bleTxChar = nullptr;
+BLECharacteristic* bleRxChar = nullptr;
+bool bleClientConnected = false;
+
+// Kirim satu baris "KEY=VALUE" ke app lewat TX characteristic (format sama
+// dengan telemetry KEY=VALUE yang sudah dipakai supaya app tinggal pakai
+// parser KEY=VALUE yang sama, gak perlu parser baru).
+void bleSendLine(const String& line) {
+  if (!bleClientConnected || bleTxChar == nullptr) return;
+  String out = line + "\r\n";
+  bleTxChar->setValue((uint8_t*)out.c_str(), out.length());
+  bleTxChar->notify();
+}
+
+// Ambang kecepatan (km/h) — di atas ini, command CONTACT_OFF DITOLAK.
+// Alasan: motor EV kehilangan daya penggerak SEKETIKA begitu kontak
+// diputus (bukan cuma starter yg mati, tapi controller-nya ikut mati).
+// Kalau ini kejadian pas motor masih melaju — baik krn HP nyenggol tombol
+// di app, ATAU remote fisik ketekan gak sengaja di kantong/tas — itu bisa
+// bahaya (kehilangan traksi/lampu/dash mendadak di jalan). CONTACT_ON gak
+// dibatasi (nyalain kontak kapan aja aman).
+#define CONTACT_OFF_SPEED_LIMIT_KMH 2.0f
+
+bool setContactRelay(bool on) {
+  if (!on && telem.speedKmh > CONTACT_OFF_SPEED_LIMIT_KMH) {
+    Serial.print("setContactRelay(false) DITOLAK — motor masih melaju (");
+    Serial.print(telem.speedKmh); Serial.println(" km/h) — safety interlock.");
+    bleSendLine("CONTACT_REJECTED=MOVING");
+    return false;
+  }
+  contactRelayOn = on;
+  digitalWrite(CONTACT_RELAY_PIN, on ? HIGH : LOW);
+  Serial.print("setContactRelay("); Serial.print(on ? "true" : "false");
+  Serial.print(") -> GPIO"); Serial.print(CONTACT_RELAY_PIN);
+  Serial.print(" readback = "); Serial.println(digitalRead(CONTACT_RELAY_PIN));
+  bleSendLine(String("CONTACT=") + (on ? "1" : "0"));
+  playTone(on ? DF_TRACK_CONTACT_ON : DF_TRACK_CONTACT_OFF);
+  return true;
+}
+
+// ---------------- Matrix MAX7219 (tampilan AT+NAV) ----------------
+MD_Parola matrixDisp = MD_Parola(MATRIX_HARDWARE_TYPE, MATRIX_DIN_PIN, MATRIX_CLK_PIN, MATRIX_CS_PIN, MATRIX_MAX_DEVICES);
+
+// Dipakai buat komunikasi aman antara BLE callback (thread lain) -> loop()
+// utama. BLE callback CUMA nulis ke sini, loop() yg baca & eksekusi ke
+// matrixDisp — biar matrixDisp cuma pernah disentuh dari 1 thread aja.
+//
+// PERBAIKAN (root cause "matrix korup/blank via BLE"): sebelumnya ini pakai
+// String, yang alamat memorinya bisa PINDAH tiap kali ditulis ulang (realloc
+// internal). MD_Parola/displayText() menyimpan POINTER ke buffer ini dan
+// terus membacanya selama animasi scroll berjalan di loop() — kalau thread
+// BLE menimpa String itu (alokasi ulang) SAAT MD_Parola masih menunjuk ke
+// alamat lama, itu use-after-free: baca memori yang sudah gak valid ->
+// karakter acak atau blank. Persis gejala yg dilaporkan (lancar lewat web,
+// korup lewat BLE) — jalur web gak lewat handoff dua-thread ini.
+//
+// Fix: pendingMatrixText sekarang char[] TETAP (alamatnya never berubah,
+// aman ditunjuk MD_Parola terus-menerus), dan HANYA loop() yang pernah
+// menulis ke buffer ini. Thread BLE cuma menulis ke staging buffer terpisah
+// (pendingMatrixStaging) yang gak pernah disentuh MD_Parola sama sekali,
+// lalu loop() yang menyalin dari staging -> buffer utama saat aman melakukannya.
+#define MATRIX_TEXT_BUF_LEN 80
+char pendingMatrixText[MATRIX_TEXT_BUF_LEN] = "";
+char pendingMatrixStaging[MATRIX_TEXT_BUF_LEN] = "";
+volatile bool matrixUpdatePending = false;
+// true = item "sekali tampil lalu kabari MATRIX_DONE" (dipakai app buat rotasi
+// SOC/kecepatan/dll -- lihat handler MATRIX_TEXT: di bawah). false = tampil
+// terus-menerus looping tanpa akhir (dipakai NAV_TEXT & teks boot "GESITS SIAP").
+volatile bool pendingMatrixIsOneShot = false;
+volatile bool matrixOneShotActive = false;
+
+// ---- Kontrol mode CAN dari app via BLE (pengganti buka web /mode & /mid) ----
+// BLE callback jalan di task BLE, sedangkan reinitTWAI() menyentuh driver TWAI
+// yang juga dipakai loop() (twai_receive). Jadi callback CUMA antre command,
+// loop() yang eksekusi -- pola sama seperti NAV_TEXT.
+// Command dari app:  CAN_MODE:NORMAL | CAN_MODE:LISTEN | MID:ON | MID:OFF | CAN_STATUS?
+//                    SIM:CONTROLLER | SIM:BATTERY | SIM:OFF   (KHUSUS DEVELOPER, lihat catatan enum OpMode)
+// Balasan/status (angka, supaya cocok dgn parser KEY=VALUE di app):
+//   CANMODE=1 (NORMAL, ikut ACK) / 0 (LISTEN_ONLY, pasif)
+//   MIDEMU=1 (emulator heartbeat MID aktif) / 0
+//   SIMMODE=0 OFF | 1 MID | 2 CONTROLLER_SIM | 3 BATTERY_SIM  (= nilai opMode)
+enum CanCmd : uint8_t { CANCMD_NONE = 0, CANCMD_NORMAL, CANCMD_LISTEN, CANCMD_MID_ON, CANCMD_MID_OFF, CANCMD_STATUS, CANCMD_SIM_CTRL, CANCMD_SIM_BATT, CANCMD_SIM_OFF };
+#define CANCMD_QUEUE_SIZE 6
+volatile uint8_t canCmdQueue[CANCMD_QUEUE_SIZE];
+volatile uint8_t canCmdHead = 0, canCmdTail = 0;
+// Input manual simulator via BLE (padanan /sim/battery/set & /sim/controller/set di web).
+//   SIMB:soc=80&soh=95&tbat=28&vbat=72&ibat=0&cycle=50
+//   SIMC:speed=40.5&throttle=30&mode=1&cruise=0&rem=0&park=0&sidestand=0&tinv=35&tmot=40
+// struct simBatt/simCtrl dideklarasi di bawah (setelah callback BLE), jadi callback cuma
+// menitipkan string query-nya; loop() yang mem-parsing & menulis ke struct.
+// Param yang tidak dikirim tetap pakai nilai terakhir (sama seperti versi web).
+char pendingSimQuery[128];
+volatile uint8_t pendingSimQueryType = 0; // 0 kosong, 1 = SIMB (baterai), 2 = SIMC (kontroler)
+void enqueueCanCmd(uint8_t c) {
+  uint8_t next = (canCmdHead + 1) % CANCMD_QUEUE_SIZE;
+  if (next == canCmdTail) return; // penuh -> buang (jarang, app kirim pelan)
+  canCmdQueue[canCmdHead] = c;
+  canCmdHead = next;
+}
+
+// Tampilkan teks ke matrix — statis (PA_CENTER) kalau muat di layar tanpa
+// scroll, atau scroll kiri terus-menerus kalau kepanjangan. Dipanggil dari
+// BleRxCallbacks::onWrite() tiap kali app kirim "NAV_TEXT:...".
+void showOnMatrix(const char* text) {
+  matrixDisp.displayClear();
+  matrixDisp.displayReset();
+  int screenWidthPx = MATRIX_MAX_DEVICES * 8;
+  int approxTextPx  = (int)strlen(text) * 6; // ~6px/karakter (font default 5px + 1 spasi)
+  if (approxTextPx <= screenWidthPx) {
+    matrixDisp.displayText(text, PA_CENTER, MATRIX_SCROLL_SPEED_MS,
+                            MATRIX_SCROLL_PAUSE_MS, PA_PRINT, PA_NO_EFFECT);
+  } else {
+    matrixDisp.displayText(text, PA_LEFT, MATRIX_SCROLL_SPEED_MS,
+                            MATRIX_SCROLL_PAUSE_MS, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  }
+}
+
+// ---------------- Menu web /matrix (di-porting dari sketch MATRIX-WEB-PRINT) ----------------
+// Pilihan tampilan Matrix dari web server 192.168.4.1/matrix.
+// Hanya SATU data aktif pada satu waktu: cocok untuk PA_PRINT, tanpa scroll/rotasi.
+// Nilai 0 (MW_NONE) = tidak ada data yang dipilih / Matrix mati.
+volatile int matrixWebField = 0;
+
+// Sumber terakhir yang menguasai Matrix: WEB (menu /matrix, dari CAN) atau
+// BLE (app kirim NAV_TEXT:). Mencegah keduanya saling menimpa tampilan --
+// command/pilihan TERBARU yang jadi pemilik Matrix.
+enum MatrixControlSource { MATRIX_SRC_NONE = 0, MATRIX_SRC_WEB, MATRIX_SRC_BLE, MATRIX_SRC_FX };
+volatile int matrixControlSource = MATRIX_SRC_NONE;
+
+String matrixWebLastValue = "";
+// Buffer teks HARUS global/persistent (terpisah dari pendingMatrixText milik
+// BLE) karena MD_Parola menyimpan pointer ke string yang diberikan ke
+// displayText(). Jangan pakai String lokal di sini.
+String matrixWebDisplayText = "";
+uint32_t matrixWebLastRefresh = 0;
+
+// Field yang tersedia di menu /matrix.
+enum MatrixWebField {
+  MW_NONE = 0,
+  MW_SPEED, MW_RPM, MW_SOC, MW_SOH, MW_TBAT, MW_VOLTAGE, MW_CURRENT, MW_POWER, MW_CYCLE,
+  MW_TINV, MW_Tmot, MW_THROTTLE, MW_TORQUE, MW_MODE, MW_PARK, MW_CRUISE, MW_REM, MW_SIDESTAND,
+  MW_EFFICIENCY, MW_ENERGY, MW_AH,
+  MW_AH_KM, MW_KM_AH, MW_TARIF, MW_TARIF_KM
+};
+
+// Tarif listrik referensi (Rp/kWh) -- samakan dgn ELECTRICITY_TARIFF_IDR di app (index.html).
+#define MATRIX_TARIF_IDR_PER_KWH 1447.0f
+#define MATRIX_MW_LAST MW_TARIF_KM
+
+// Placeholder no-op: matrixDisp (MD_Parola) di sketch ini cuma dipakai
+// single-zone (matrixDisp.begin() tanpa parameter zone). Dipanggil di
+// showMatrixWebField() sebelum reset display buat jaga-jaga kalau nanti
+// ditambah fitur split-zone.
+void matrixUseSingleZone() {
+  // no-op
+}
+
+// Tampilkan teks ke buffer persistent tertentu -- statis (PA_CENTER) kalau
+// muat di layar tanpa scroll, atau scroll kiri terus-menerus kalau
+// kepanjangan. Dipakai bersama oleh field angka biasa, Arus (live), dan Rem.
+void matrixShowTextAuto(String &buf, const String &text, uint16_t speed, uint16_t pause) {
+  buf = text;
+  int screenWidthPx = MATRIX_MAX_DEVICES * 8;
+  int approxTextPx  = buf.length() * 6;
+  if (approxTextPx <= screenWidthPx) {
+    matrixDisp.displayText(buf.c_str(), PA_CENTER, speed, pause, PA_PRINT, PA_NO_EFFECT);
+  } else {
+    matrixDisp.displayText(buf.c_str(), PA_LEFT, speed, pause, PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  }
+}
+
+const char* matrixWebFieldName(int field) {
+  switch (field) {
+    case MW_SPEED: return "Kecepatan";
+    case MW_RPM: return "RPM BLDC";
+    case MW_SOC: return "SOC";
+    case MW_SOH: return "SOH";
+    case MW_TBAT: return "Suhu Baterai";
+    case MW_VOLTAGE: return "Voltase";
+    case MW_CURRENT: return "Arus";
+    case MW_POWER: return "Daya";
+    case MW_CYCLE: return "Cycle";
+    case MW_TINV: return "Suhu Inverter";
+    case MW_Tmot: return "Suhu Motor";
+    case MW_THROTTLE: return "Throttle";
+    case MW_TORQUE: return "Torque Raw";
+    case MW_MODE: return "Mode";
+    case MW_PARK: return "Park";
+    case MW_CRUISE: return "Cruise";
+    case MW_REM: return "Rem";
+    case MW_SIDESTAND: return "Side Stand";
+    case MW_EFFICIENCY: return "Efisiensi";
+    case MW_ENERGY: return "Energi Terpakai";
+    case MW_AH: return "Ah Terpakai";
+    case MW_AH_KM: return "Ah per Km";
+    case MW_KM_AH: return "Km per Ah";
+    case MW_TARIF: return "Tarif (Rp)";
+    case MW_TARIF_KM: return "Tarif per Km (Rp)";
+    default: return "Tidak ada";
+  }
+}
+
+// Akumulator konsumsi dari telemetry CAN. Hanya arus/daya NEGATIF (discharging
+// asli) yang dihitung sebagai energi/Ah terpakai.
+float matrixEnergyWh = 0.0f;
+float matrixAhUsed = 0.0f;
+float matrixDistanceKm = 0.0f;
+uint32_t matrixEnergyLastMs = 0;
+
+// Nilai Matrix web: ANGKA SAJA, tanpa label dan tanpa satuan.
+String matrixWebValue(int field) {
+  switch (field) {
+    case MW_SPEED:     return telem.speedKmh >= 0 ? String(telem.speedKmh, 1) : "-";
+    case MW_RPM:       return telem.rpm >= 0 ? String((long)round(telem.rpm)) : "-";
+    case MW_SOC:       return telem.soc >= 0 ? String((int)telem.soc) : "-";
+    case MW_SOH:       return telem.soh >= 0 ? String((int)telem.soh) : "-";
+    case MW_TBAT:      return telem.tbat >= 0 ? String((int)telem.tbat) : "-";
+    case MW_VOLTAGE:   return telem.vbat >= 0 ? String((int)telem.vbat) : "-";
+    case MW_CURRENT:   return telem.ibat >= -128 ? String((int)telem.ibat) : "-";
+    case MW_POWER: {
+      if (telem.vbat < 0 || telem.ibat < -128) return "-";
+      return String((long)(telem.vbat * telem.ibat));
+    }
+    case MW_CYCLE:    return telem.cbat >= 0 ? String((int)telem.cbat) : "-";
+    case MW_TINV:     return telem.tinv >= 0 ? String((int)telem.tinv) : "-";
+    case MW_Tmot:     return telem.tmot >= 0 ? String((int)telem.tmot) : "-";
+    case MW_THROTTLE: return telem.throttlePct >= 0 ? String((int)telem.throttlePct) : "-";
+    case MW_TORQUE:   return String((long)telem.torqueRaw);
+    case MW_MODE:
+      if (telem.mode < 0) return "-";
+      switch (telem.mode) {
+        case 0:  return "ECO";
+        case 1:  return "URBAN";
+        case 2:  return "SPORT";
+        default: return "-";
+      }
+    case MW_PARK:
+      if (telem.park < 0) return "-";
+      return telem.park == 1 ? "PARK" : "DRIVE";
+    case MW_CRUISE:
+      if (telem.cruise < 0) return "-";
+      return telem.cruise == 1 ? "Cruise ON" : "Cruise OFF";
+    case MW_REM:
+      if (telem.rem < 0) return "-";
+      return telem.rem == 1 ? "REM" : "-";
+    case MW_SIDESTAND:
+      if (telem.sidestand < 0) return "-";
+      return telem.sidestand == 1 ? "TURUN" : "NAIK";
+    case MW_EFFICIENCY: return matrixDistanceKm > 0.01 ? String(matrixEnergyWh / matrixDistanceKm, 1) : "-";
+    case MW_ENERGY: return String((long)matrixEnergyWh);
+    case MW_AH: return String(matrixAhUsed, 2);
+    case MW_AH_KM: return (matrixDistanceKm > 0.01 && matrixAhUsed > 0.0f) ? String(matrixAhUsed / matrixDistanceKm, 2) : "-";
+    case MW_KM_AH: return (matrixDistanceKm > 0.01 && matrixAhUsed > 0.0f) ? String(matrixDistanceKm / matrixAhUsed, 2) : "-";
+    case MW_TARIF: return matrixEnergyWh > 0.0f ? String((long)round(matrixEnergyWh / 1000.0f * MATRIX_TARIF_IDR_PER_KWH)) : "-";
+    case MW_TARIF_KM: return (matrixDistanceKm > 0.3f && matrixEnergyWh > 0.0f) ? String((long)round((matrixEnergyWh / 1000.0f * MATRIX_TARIF_IDR_PER_KWH) / matrixDistanceKm)) : "-";
+    default: return "";
+  }
+}
+
+void serviceMatrixCurrentDisplay() {
+  if (millis() - matrixWebLastRefresh < 80) return;
+  String value = matrixWebValue(MW_CURRENT);
+  if (value != matrixWebLastValue) {
+    matrixWebLastValue = value;
+    matrixWebLastRefresh = millis();
+    matrixShowTextAuto(matrixWebDisplayText, value, MATRIX_SCROLL_SPEED_MS, MATRIX_SCROLL_PAUSE_MS);
+  }
+}
+
+// Rem: status SESAAT (dipencet lalu dilepas). Saat aktif, "REM" BERKEDIP
+// biar jelas ini kejadian aktif, bukan angka statis. Saat tidak direm,
+// tampil dash statis.
+uint32_t matrixRemLastBlink = 0;
+bool matrixRemBlinkOn = false;
+int matrixRemLastRawState = -99; // -99 = belum pernah digambar sama sekali
+
+void serviceMatrixRemDisplay() {
+  if (telem.rem != 1) {
+    if (telem.rem != matrixRemLastRawState) {
+      matrixRemLastRawState = telem.rem;
+      matrixDisp.displayClear();
+      matrixDisp.displayReset();
+      matrixShowTextAuto(matrixWebDisplayText, "-", 0, 0);
+    }
+    return;
+  }
+  matrixRemLastRawState = telem.rem;
+  if (millis() - matrixRemLastBlink >= WARNING_BLINK_MS) {
+    matrixRemLastBlink = millis();
+    matrixRemBlinkOn = !matrixRemBlinkOn;
+    matrixDisp.displayClear();
+    matrixDisp.displayReset();
+    if (matrixRemBlinkOn) {
+      matrixShowTextAuto(matrixWebDisplayText, "REM", 0, 0);
+    }
+  }
+}
+
+void showMatrixWebField(int field) {
+  if (field < MW_NONE || field > MATRIX_MW_LAST) field = MW_NONE;
+  matrixWebField = field;
+
+  // WEB/CAN menjadi pemilik Matrix begitu satu field dipilih.
+  matrixControlSource = (field == MW_NONE) ? MATRIX_SRC_NONE : MATRIX_SRC_WEB;
+  matrixOneShotActive = false; // pastikan gak nyangkut dari sesi BLE (MATRIX_TEXT) sebelumnya
+
+  matrixUseSingleZone();
+
+  matrixDisp.displayClear();
+  matrixDisp.displayReset();
+  if (field == MW_NONE) return;
+
+  if (field == MW_CURRENT) {
+    matrixWebLastValue = "";
+    matrixWebLastRefresh = millis();
+    return;
+  }
+
+  if (field == MW_REM) {
+    matrixRemLastRawState = -99;
+    matrixWebLastRefresh = millis();
+    return;
+  }
+
+  matrixWebLastValue = matrixWebValue(field);
+  matrixWebLastRefresh = millis();
+
+  if (field == MW_CRUISE && matrixWebLastValue.length() > 5) {
+    matrixWebDisplayText = matrixWebLastValue;
+    matrixDisp.displayText(matrixWebDisplayText.c_str(), PA_LEFT, 50, 800,
+                           PA_SCROLL_LEFT, PA_SCROLL_LEFT);
+  } else {
+    matrixShowTextAuto(matrixWebDisplayText, matrixWebLastValue, 0, 0);
+  }
+
+  Serial.print("Matrix Web -> ");
+  Serial.print(matrixWebFieldName(field));
+  Serial.print(" = ");
+  Serial.println(matrixWebDisplayText);
+}
+
+void serviceMatrixEnergyCounters() {
+  uint32_t now = millis();
+  if (matrixEnergyLastMs == 0) {
+    matrixEnergyLastMs = now;
+    return;
+  }
+  uint32_t dtMs = now - matrixEnergyLastMs;
+  matrixEnergyLastMs = now;
+  if (dtMs == 0 || dtMs > 1000) return;
+  if (telem.vbat < 0 || telem.ibat < -128 || telem.speedKmh < 0) return;
+
+  float dtSec = dtMs / 1000.0f;
+  float currentA = telem.ibat;
+  float powerW = telem.vbat * currentA;
+
+  // Konvensi tanda arus: NEGATIF = discharging asli (yg dihitung "terpakai").
+  if (powerW < 0.0f) {
+    matrixEnergyWh += (-powerW) * dtSec / 3600.0f;
+  }
+  if (currentA < 0.0f) {
+    matrixAhUsed += (-currentA) * dtSec / 3600.0f;
+  }
+  matrixDistanceKm += telem.speedKmh * dtSec / 3600.0f;
+}
+
+void serviceMatrixWebDisplay() {
+  // Kalau BLE (NAV_TEXT) baru saja kirim teks, jangan ditimpa menu web.
+  if (matrixControlSource != MATRIX_SRC_WEB) return;
+  if (matrixWebField == MW_NONE) return;
+
+  if (matrixWebField == MW_CURRENT) { serviceMatrixCurrentDisplay(); return; }
+  if (matrixWebField == MW_REM)     { serviceMatrixRemDisplay();     return; }
+
+  if (millis() - matrixWebLastRefresh < 80) return;
+  String value = matrixWebValue(matrixWebField);
+  if (value != matrixWebLastValue) {
+    showMatrixWebField(matrixWebField);
+  }
+}
+// ---------------------------------------------------------------------
+
+
+// =====================================================================
+//  MATRIX CUSTOM + ANIMASI  (menu web: http://192.168.4.1/matrixfx)
+//  Dibuat utk Matrix yg dipasang di BELAKANG motor (bawah plat nomor):
+//  teks custom + efek, sein sekuensial, hazard, rem, scanner, dll.
+//  Semua pengaturan disimpan di NVS (Preferences, namespace "mxfx").
+//  Web handler jalan di thread loop() yg sama dgn displayAnimate(), jadi
+//  aman menyentuh matrixDisp langsung dari sini.
+//  Urutan enum = urutan tombol di halaman web (dikelompokkan).
+// =====================================================================
+enum MatrixFxMode {
+  FX_OFF = 0,
+  // Teks
+  FX_TEXT, FX_BLINK_TEXT,
+  // Lalu lintas / sinyal
+  FX_SEIN_L, FX_SEIN_R, FX_HAZARD, FX_BRAKE, FX_STROBE, FX_ARROW_L, FX_ARROW_R,
+  // Efek visual
+  FX_KITT, FX_BREATHE, FX_RAIN, FX_SPARKLE, FX_FILL, FX_CENTER_FILL, FX_SCAN_COL, FX_SCAN_ROW,
+  FX_CHECKER, FX_DIAG, FX_WAVE, FX_EQ, FX_HEARTBEAT, FX_FIRE, FX_BALL, FX_MARCH, FX_RIPPLE,
+  FX_STRIPES, FX_STAR, FX_HEART,
+  // Berdasarkan data motor
+  FX_BAR_THR, FX_BAR_SPD,
+  // Otomatis: putar semua efek bergantian
+  FX_CYCLE,
+  FX_LAST = FX_CYCLE
+};
+static const char* const FX_MODE_NAMES[] = {
+  "Mati",
+  "Teks Custom", "Teks Kedip",
+  "Sein Kiri", "Sein Kanan", "Hazard", "Rem (kedip lalu nyala)", "Strobo", "Panah Kiri", "Panah Kanan",
+  "Scanner KITT", "Napas", "Hujan", "Bintang Kelap-kelip", "Isi Kolom", "Isi dari Tengah", "Garis Scan Kolom", "Garis Scan Baris",
+  "Papan Catur", "Garis Diagonal", "Ombak", "Equalizer", "Detak Jantung (ECG)", "Api", "Bola Memantul", "Border Jalan", "Riak Air",
+  "Strip Kedip", "Bintang Jatuh", "Hati Berdenyut",
+  "Bar Throttle", "Bar Kecepatan",
+  "Putar Semua (otomatis)"
+};
+static const char* fxGroupTitle(int m) {
+  switch (m) {
+    case FX_TEXT:     return "Teks";
+    case FX_SEIN_L:   return "Lalu lintas / sinyal";
+    case FX_KITT:     return "Efek visual";
+    case FX_BAR_THR:  return "Berdasarkan data motor";
+    case FX_CYCLE:    return "Otomatis";
+    default:          return nullptr;
+  }
+}
+static const char* const FX_EFFECT_NAMES[] = {
+  "Statis (auto-scroll kalau panjang)", "Scroll kiri", "Scroll kanan", "Scroll atas",
+  "Dissolve", "Blinds", "Wipe kursor", "Buka/Tutup kursor", "Grow", "Scan horizontal", "Acak",
+  "Slice", "Mesh", "Wipe", "Scan vertikal", "Buka/Tutup", "Scroll bawah",
+  "Scroll diagonal atas-kiri", "Scroll diagonal bawah-kanan", "Scan horizontal X", "Scan vertikal X"
+};
+#define FX_EFFECT_COUNT 21
+#define FX_TEXT_MAX 40
+#define MATRIX_FX_BAR_SPEED_MAX 100.0f   // km/h = bar penuh utk mode Bar Kecepatan
+
+// Daftar yang diputar oleh mode "Putar Semua".
+static const uint8_t FX_CYCLE_LIST[] = {
+  FX_TEXT, FX_KITT, FX_RAIN, FX_FILL, FX_CENTER_FILL, FX_SCAN_COL, FX_CHECKER, FX_DIAG, FX_WAVE,
+  FX_EQ, FX_HEARTBEAT, FX_FIRE, FX_BALL, FX_MARCH, FX_RIPPLE, FX_STAR, FX_HEART, FX_STRIPES,
+  FX_SPARKLE, FX_BREATHE
+};
+#define FX_CYCLE_COUNT (sizeof(FX_CYCLE_LIST) / sizeof(FX_CYCLE_LIST[0]))
+
+uint8_t  fxMode      = FX_OFF;
+uint8_t  fxSub       = FX_TEXT;  // efek yg sedang diputar saat mode FX_CYCLE
+uint8_t  fxCycleIdx  = 0;
+uint32_t fxCycleLast = 0;
+uint8_t  fxCycleSec  = 8;        // detik per efek (mode Putar Semua)
+uint8_t  fxEffect    = 1;        // index FX_EFFECT_NAMES
+uint16_t fxSpeedMs   = 40;       // delay per langkah (kecil = cepat)
+uint16_t fxPauseMs   = 1500;     // jeda teks (efek non-scroll)
+uint8_t  fxBright    = 4;        // 0-15
+bool     fxFlip      = false;    // balik arah kiri/kanan utk animasi pixel
+bool     fxAutoBrake = false;    // sinyal REM CAN -> override layar jadi lampu rem
+bool     fxAutoStart = false;    // langsung aktif setelah boot
+char     fxText[FX_TEXT_MAX + 1] = "GESITS";
+
+bool     fxBrakeOverride = false;
+uint32_t fxStep = 0, fxLastStep = 0;
+bool     fxInit = false;          // re-init state animasi (hujan/api/bola/...)
+Preferences fxPrefs;
+
+// Efek yang SEDANG tampil (memperhitungkan override rem & mode putar-semua).
+static inline uint8_t fxEffMode() {
+  if (fxBrakeOverride) return FX_BRAKE;
+  if (fxMode == FX_CYCLE) return fxSub;
+  return fxMode;
+}
+static inline bool fxIsPixelMode(uint8_t m) { return m >= FX_BLINK_TEXT && m < FX_CYCLE; }
+static inline bool fxPixelDriven() {
+  return matrixControlSource == MATRIX_SRC_FX && fxIsPixelMode(fxEffMode());
+}
+
+void fxLoad() {
+  fxPrefs.begin("mxfx", false);
+  fxMode      = fxPrefs.getUChar("mode", FX_OFF);
+  fxEffect    = fxPrefs.getUChar("eff", 1);
+  fxSpeedMs   = fxPrefs.getUShort("spd", 40);
+  fxPauseMs   = fxPrefs.getUShort("pau", 1500);
+  fxBright    = fxPrefs.getUChar("br", 4);
+  fxCycleSec  = fxPrefs.getUChar("cyc", 8);
+  fxFlip      = fxPrefs.getBool("flip", false);
+  fxAutoBrake = fxPrefs.getBool("abr", false);
+  fxAutoStart = fxPrefs.getBool("auto", false);
+  String t    = fxPrefs.getString("txt", "GESITS");
+  fxPrefs.end();
+  if (fxMode > FX_LAST) fxMode = FX_OFF;
+  if (fxEffect >= FX_EFFECT_COUNT) fxEffect = 1;
+  fxSpeedMs = constrain(fxSpeedMs, 10, 300);
+  fxPauseMs = constrain(fxPauseMs, 0, 10000);
+  fxBright  = constrain(fxBright, 0, 15);
+  fxCycleSec = constrain(fxCycleSec, 3, 60);
+  t.toCharArray(fxText, FX_TEXT_MAX + 1);
+}
+
+void fxSave() {
+  fxPrefs.begin("mxfx", false);
+  fxPrefs.putUChar("mode", fxMode);
+  fxPrefs.putUChar("eff", fxEffect);
+  fxPrefs.putUShort("spd", fxSpeedMs);
+  fxPrefs.putUShort("pau", fxPauseMs);
+  fxPrefs.putUChar("br", fxBright);
+  fxPrefs.putUChar("cyc", fxCycleSec);
+  fxPrefs.putBool("flip", fxFlip);
+  fxPrefs.putBool("abr", fxAutoBrake);
+  fxPrefs.putBool("auto", fxAutoStart);
+  fxPrefs.putString("txt", String(fxText));
+  fxPrefs.end();
+}
+
+// Pasang teks (mode Teks Custom / Teks Kedip) ke Parola.
+void fxShowText() {
+  matrixDisp.displayClear();
+  matrixDisp.displayReset();
+  if (fxText[0] == '\0') strcpy(fxText, "GESITS");
+  const int screenPx = MATRIX_MAX_DEVICES * 8;
+  if (fxEffMode() == FX_BLINK_TEXT) {
+    matrixDisp.displayText(fxText, PA_CENTER, 0, 0, PA_PRINT, PA_NO_EFFECT);
+    return;
+  }
+  textPosition_t al = PA_CENTER;
+  textEffect_t in = PA_PRINT, out = PA_NO_EFFECT;
+  switch (fxEffect) {
+    case 0:
+      if ((int)strlen(fxText) * 6 > screenPx) { al = PA_LEFT; in = out = PA_SCROLL_LEFT; }
+      break;
+    case 1:  al = PA_LEFT;  in = out = PA_SCROLL_LEFT;  break;
+    case 2:  al = PA_RIGHT; in = out = PA_SCROLL_RIGHT; break;
+    case 3:  in = out = PA_SCROLL_UP;  break;
+    case 4:  in = out = PA_DISSOLVE;   break;
+    case 5:  in = out = PA_BLINDS;     break;
+    case 6:  in = out = PA_WIPE_CURSOR; break;
+    case 7:  in = PA_OPENING_CURSOR; out = PA_CLOSING_CURSOR; break;
+    case 8:  in = PA_GROW_UP; out = PA_GROW_DOWN; break;
+    case 9:  in = out = PA_SCAN_HORIZ; break;
+    case 10: in = out = PA_RANDOM;     break;
+    case 11: in = out = PA_SLICE;      break;
+    case 12: in = out = PA_MESH;       break;
+    case 13: in = out = PA_WIPE;       break;
+    case 14: in = out = PA_SCAN_VERT;  break;
+    case 15: in = PA_OPENING; out = PA_CLOSING; break;
+    case 16: in = out = PA_SCROLL_DOWN; break;
+    case 17: al = PA_LEFT;  in = out = PA_SCROLL_UP_LEFT;    break;
+    case 18: al = PA_LEFT;  in = out = PA_SCROLL_DOWN_RIGHT; break;
+    case 19: in = out = PA_SCAN_HORIZX; break;
+    default: in = out = PA_SCAN_VERTX;  break;
+  }
+  matrixDisp.displayText(fxText, al, fxSpeedMs, fxPauseMs, in, out);
+}
+
+// Pindah ke efek berikutnya pada mode Putar Semua.
+static void fxCycleSet(uint8_t idx) {
+  fxCycleIdx = idx % FX_CYCLE_COUNT;
+  fxSub = FX_CYCLE_LIST[fxCycleIdx];
+  fxCycleLast = millis();
+  fxStep = 0; fxLastStep = 0; fxInit = false;
+  matrixDisp.setIntensity(fxBright);
+  matrixDisp.displayClear();
+  if (fxSub == FX_TEXT) fxShowText();
+}
+
+// Terapkan pengaturan sekarang: ambil alih Matrix (sumber = FX).
+void fxApply(bool save) {
+  if (save) fxSave();
+  fxBrakeOverride = false;
+  matrixOneShotActive = false;
+  matrixDisp.setIntensity(fxBright);
+  matrixDisp.displayClear();
+  fxStep = 0; fxLastStep = 0; fxInit = false;
+  if (fxMode == FX_OFF) { matrixControlSource = MATRIX_SRC_NONE; return; }
+  matrixControlSource = MATRIX_SRC_FX;
+  if (fxMode == FX_CYCLE) { fxCycleSet(0); return; }
+  if (fxMode == FX_TEXT || fxMode == FX_BLINK_TEXT) fxShowText();
+}
+
+// ---- sprite & gelombang ----
+static const uint8_t FX_HEART_BIG[8]   = {0x66,0xFF,0xFF,0xFF,0x7E,0x3C,0x18,0x00};
+static const uint8_t FX_HEART_SMALL[8] = {0x00,0x24,0x7E,0x7E,0x3C,0x18,0x00,0x00};
+static const int8_t  FX_ECG[24] = {4,4,4,4,4,3,4,4,4,4,4,4,2,0,6,7,4,4,4,4,4,4,4,4};
+
+// Satu frame animasi pixel. Koordinat x: 0 = kiri ... W-1 = kanan (sebelum flip).
+void fxStepFrame(uint8_t eff) {
+  if (eff == FX_BLINK_TEXT) {
+    if ((fxStep & 1) == 0) { matrixDisp.displayReset(); matrixDisp.displayAnimate(); }
+    else                   { matrixDisp.displayClear(); }
+    return;
+  }
+  MD_MAX72XX* mx = matrixDisp.getGraphicObject();
+  const int W = MATRIX_MAX_DEVICES * 8;
+  static int8_t   rainY[64];
+  static uint32_t spk[8];
+  static uint8_t  eqH[16];
+  static uint8_t  fireH[64];
+  static int      bx, by, bdx, bdy;
+  if (!fxInit) {
+    fxInit = true;
+    for (int i = 0; i < 64; i++) { rainY[i] = -(int)random(0, 14); fireH[i] = 2; }
+    for (int i = 0; i < 8; i++) spk[i] = 0;
+    for (int i = 0; i < 16; i++) eqH[i] = 0;
+    bx = random(0, W - 2); by = random(0, 6); bdx = 1; bdy = 1;
+  }
+  mx->control(MD_MAX72XX::UPDATE, MD_MAX72XX::OFF);
+  mx->clear();
+  auto P = [&](int x, int y) {
+    if (x < 0 || x >= W || y < 0 || y > 7) return;
+    mx->setPoint(y, fxFlip ? x : (W - 1 - x), true);
+  };
+  auto FILL = [&]() { for (int y = 0; y < 8; y++) for (int x = 0; x < W; x++) P(x, y); };
+  switch (eff) {
+    case FX_SEIN_L:
+    case FX_SEIN_R: {
+      // Sapuan sekuensial berbentuk chevron, 3 kolom per frame, lalu padam.
+      const int grow = W / 3 + 4, cycle = grow + 4;
+      int k = fxStep % cycle;
+      if (k < grow) {
+        int front = W - 3 * k;
+        for (int y = 0; y < 8; y++) {
+          int off = (y < 4) ? (3 - y) : (y - 4);
+          for (int x = 0; x < W; x++)
+            if (x >= front + off) P(eff == FX_SEIN_L ? x : (W - 1 - x), y);
+        }
+      }
+      break;
+    }
+    case FX_HAZARD: {
+      int k = fxStep % 14;
+      if (k < 9)
+        for (int y = 0; y < 8; y++)
+          for (int x = 0; x < W; x++) {
+            int dx = (x < W / 2) ? (W / 2 - 1 - x) : (x - W / 2);
+            if (k >= 6 || dx <= 3 * k) P(x, y);
+          }
+      break;
+    }
+    case FX_BRAKE: {
+      bool on = (fxStep < 6) ? ((fxStep & 1) == 0) : true;
+      if (on) FILL();
+      break;
+    }
+    case FX_STROBE: {
+      int k = fxStep % 12;
+      if (k == 0 || k == 2 || k == 4) FILL();
+      break;
+    }
+    case FX_ARROW_L:
+    case FX_ARROW_R: {
+      for (int y = 0; y < 8; y++) {
+        int off = (y < 4) ? (3 - y) : (y - 4);
+        for (int x = 0; x < W; x++)
+          if (((x - off + (int)fxStep) % 8 + 8) % 8 < 2) P(eff == FX_ARROW_L ? x : (W - 1 - x), y);
+      }
+      break;
+    }
+    case FX_KITT: {
+      const int bar = 5, span = W - bar;
+      int ph = fxStep % (2 * span);
+      int dir = (ph < span) ? 1 : -1;
+      int pos = (ph < span) ? ph : (2 * span - ph);
+      for (int y = 0; y < 8; y++) {
+        for (int i = 0; i < bar; i++) P(pos + i, y);
+        for (int t = 1; t <= 5; t++) {
+          int x = (dir > 0) ? (pos - t) : (pos + bar - 1 + t);
+          bool lit = (t <= 2) ? (((x + y) & 1) == 0) : (((x + y) % 4) == 0);
+          if (lit) P(x, y);
+        }
+      }
+      break;
+    }
+    case FX_BREATHE: {
+      int ph = fxStep % 40;
+      int v = (ph < 20) ? ph : (40 - ph);
+      matrixDisp.setIntensity((uint8_t)((v * fxBright) / 20));
+      FILL();
+      break;
+    }
+    case FX_RAIN: {
+      for (int c = 0; c < W && c < 64; c++) {
+        if (random(3) != 0) rainY[c]++;
+        if (rainY[c] > 10) rainY[c] = -(int)random(0, 10);
+        for (int t = 0; t < 3; t++) P(c, rainY[c] - t);
+      }
+      break;
+    }
+    case FX_SPARKLE: {
+      for (int i = 0; i < 4; i++) {
+        spk[random(8)] |=  (1UL << random(W));
+        spk[random(8)] &= ~(1UL << random(W));
+      }
+      for (int y = 0; y < 8; y++) for (int x = 0; x < W; x++) if (spk[y] & (1UL << x)) P(x, y);
+      break;
+    }
+    case FX_FILL: {              // isi penuh dari kiri, lalu kosongkan dari kiri
+      int n = (fxStep * 2) % (2 * W);
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++)
+          if (n < W ? (x < n) : (x >= n - W)) P(x, y);
+      break;
+    }
+    case FX_CENTER_FILL: {       // isi dari tengah ke tepi, lalu kosongkan dari tengah
+      int half = W / 2, k = fxStep % (2 * half);
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++) {
+          int dx = (x < half) ? (half - 1 - x) : (x - half);
+          if (k < half ? (dx <= k) : (dx > k - half)) P(x, y);
+        }
+      break;
+    }
+    case FX_SCAN_COL: {
+      int span = W - 1, ph = fxStep % (2 * span);
+      int pos = (ph < span) ? ph : (2 * span - ph);
+      int dir = (ph < span) ? 1 : -1;
+      for (int y = 0; y < 8; y++) {
+        P(pos, y);
+        if (((y) & 1) == 0) P(pos - dir, y); else P(pos - 2 * dir, y);
+      }
+      break;
+    }
+    case FX_SCAN_ROW: {
+      int ph = fxStep % 14;
+      int pos = (ph < 7) ? ph : (14 - ph);
+      int dir = (ph < 7) ? 1 : -1;
+      for (int x = 0; x < W; x++) {
+        P(x, pos);
+        if ((x & 1) == 0) P(x, pos - dir);
+      }
+      break;
+    }
+    case FX_CHECKER: {
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++)
+          if (((x + y + (int)fxStep) & 1) == 0) P(x, y);
+      break;
+    }
+    case FX_DIAG: {
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++)
+          if (((x + y + (int)fxStep) % 6) < 2) P(x, y);
+      break;
+    }
+    case FX_STRIPES: {
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++)
+          if ((((x / 2) + (int)fxStep) & 1) == 0) P(x, y);
+      break;
+    }
+    case FX_WAVE: {
+      for (int x = 0; x < W; x++) {
+        int h = (int)(4.5f + 3.5f * sinf(x * 0.35f + fxStep * 0.30f) + 0.5f);
+        for (int y = 8 - h; y < 8; y++) P(x, y);
+      }
+      break;
+    }
+    case FX_EQ: {
+      for (int b = 0; b < 8; b++) {
+        if (random(3) == 0) eqH[b] = random(1, 9);
+        else if (eqH[b] > 0) eqH[b]--;
+        for (int y = 8 - eqH[b]; y < 8; y++)
+          for (int i = 0; i < 3; i++) P(b * 4 + i, y);
+      }
+      break;
+    }
+    case FX_HEARTBEAT: {
+      const int N = 24;
+      for (int x = 0; x < W; x++) {
+        int a = FX_ECG[(x + fxStep) % N], b2 = FX_ECG[(x + 1 + fxStep) % N];
+        int lo = min(a, b2), hi = max(a, b2);
+        for (int y = lo; y <= hi; y++) P(x, y);
+      }
+      break;
+    }
+    case FX_FIRE: {
+      uint8_t nh[64];
+      for (int x = 0; x < W; x++) {
+        int l = fireH[x > 0 ? x - 1 : x], r = fireH[x < W - 1 ? x + 1 : x];
+        int h = (l + fireH[x] + r) / 3 + (int)random(-2, 3);
+        if (random(8) == 0) h = random(5, 9);
+        nh[x] = constrain(h, 1, 8);
+      }
+      for (int x = 0; x < W; x++) {
+        fireH[x] = nh[x];
+        for (int y = 8 - nh[x]; y < 8; y++) {
+          bool top = (y == 8 - nh[x]);
+          if (!top || ((x + fxStep) & 1)) P(x, y);   // ujung api berkedip
+        }
+      }
+      break;
+    }
+    case FX_BALL: {
+      bx += bdx; by += bdy;
+      if (bx <= 0)     { bx = 0;     bdx = 1; }
+      if (bx >= W - 2) { bx = W - 2; bdx = -1; }
+      if (by <= 0)     { by = 0;     bdy = 1; }
+      if (by >= 6)     { by = 6;     bdy = -1; }
+      for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) P(bx + i, by + j);
+      break;
+    }
+    case FX_MARCH: {             // semut berbaris di sepanjang tepi panel
+      const int L = 2 * (W + 8) - 4;
+      for (int i = 0; i < L; i++) {
+        if (((i + (int)fxStep) % 4) >= 2) continue;
+        int x, y;
+        if (i < W)                 { x = i;            y = 0; }
+        else if (i < W + 7)        { x = W - 1;        y = i - W + 1; }
+        else if (i < 2 * W + 6)    { x = W - 2 - (i - (W + 7)); y = 7; }
+        else                       { x = 0;            y = 6 - (i - (2 * W + 6)); }
+        P(x, y);
+      }
+      break;
+    }
+    case FX_RIPPLE: {
+      for (int y = 0; y < 8; y++)
+        for (int x = 0; x < W; x++) {
+          float dx = fabsf(x - (W - 1) / 2.0f), dy = fabsf(y - 3.5f);
+          float e = sqrtf(dx * dx * 0.25f + dy * dy);
+          if (fmodf(e * 1.2f - fxStep * 0.4f + 200.0f, 3.0f) < 0.9f) P(x, y);
+        }
+      break;
+    }
+    case FX_STAR: {              // dua bintang jatuh berselang-seling
+      const int T = W + 10;
+      int t1 = fxStep % T, t2 = (fxStep + 19) % T;
+      int h1 = (t1 * 8) / T, h2 = 7 - (t2 * 8) / T;
+      for (int i = 0; i < 6; i++) { P(t1 - i, h1 - i / 3); P(W - 1 - (t2 - i), h2 + i / 3); }
+      break;
+    }
+    case FX_HEART: {
+      int k = fxStep % 10;
+      bool big = (k < 2) || (k >= 3 && k < 5);
+      const uint8_t *sp = big ? FX_HEART_BIG : FX_HEART_SMALL;
+      for (int h = 0; h < 3; h++)
+        for (int y = 0; y < 8; y++)
+          for (int x = 0; x < 8; x++)
+            if (sp[y] & (0x80 >> x)) P(h * 12 + x, y);
+      break;
+    }
+    case FX_BAR_THR:
+    case FX_BAR_SPD: {
+      float frac = 0;
+      if (eff == FX_BAR_THR) frac = (telem.throttlePct >= 0 ? telem.throttlePct : 0) / 100.0f;
+      else                   frac = (telem.speedKmh >= 0 ? telem.speedKmh : 0) / MATRIX_FX_BAR_SPEED_MAX;
+      frac = constrain(frac, 0.0f, 1.0f);
+      int w = (int)(frac * W + 0.5f);
+      for (int y = 0; y < 8; y++) for (int x = 0; x < w; x++) P(x, y);
+      break;
+    }
+    default: break;
+  }
+  mx->control(MD_MAX72XX::UPDATE, MD_MAX72XX::ON);   // flush ke chip
+}
+
+static uint32_t fxFrameInterval(uint8_t eff) {
+  switch (eff) {
+    case FX_BRAKE:       return 70;
+    case FX_BLINK_TEXT:  return (uint32_t)fxSpeedMs * 10;
+    case FX_BAR_THR:
+    case FX_BAR_SPD:     return 50;
+    case FX_STROBE:      return (uint32_t)fxSpeedMs * 2;
+    case FX_CHECKER:
+    case FX_STRIPES:     return (uint32_t)fxSpeedMs * 6;
+    case FX_HEART:       return (uint32_t)fxSpeedMs * 5;
+    case FX_FIRE:
+    case FX_EQ:          return (uint32_t)fxSpeedMs * 2;
+    default:             return fxSpeedMs;
+  }
+}
+
+// Dipanggil tiap iterasi loop().
+void serviceMatrixFx() {
+  static bool wasFx = false;
+  if (matrixControlSource != MATRIX_SRC_FX) {
+    if (wasFx) {                       // sumber diambil alih (BLE / menu data)
+      wasFx = false;
+      fxBrakeOverride = false;
+      matrixDisp.setIntensity(fxBright);
+    }
+    return;
+  }
+  wasFx = true;
+
+  if (fxAutoBrake) {
+    bool brk = (telem.rem == 1);
+    if (brk && !fxBrakeOverride) {
+      fxBrakeOverride = true;
+      fxStep = 0; fxLastStep = 0; fxInit = false;
+      matrixDisp.setIntensity(fxBright);
+      matrixDisp.displayClear();
+    } else if (!brk && fxBrakeOverride) {
+      fxApply(false);                  // rem dilepas -> kembali ke tampilan semula
+      return;
+    }
+  } else if (fxBrakeOverride) {
+    fxApply(false);
+    return;
+  }
+
+  if (fxMode == FX_CYCLE && !fxBrakeOverride &&
+      millis() - fxCycleLast >= (uint32_t)fxCycleSec * 1000UL) {
+    fxCycleSet(fxCycleIdx + 1);
+  }
+
+  uint8_t eff = fxEffMode();
+  if (!fxIsPixelMode(eff)) return;
+
+  uint32_t now = millis();
+  if (now - fxLastStep < fxFrameInterval(eff)) return;
+  fxLastStep = now;
+  fxStepFrame(eff);
+  fxStep++;
+}
+
+// ---- helper web ----
+static String fxUrlDecode(const String &s) {
+  String o; o.reserve(s.length());
+  for (unsigned i = 0; i < s.length(); i++) {
+    char c = s[i];
+    if (c == '+') o += ' ';
+    else if (c == '%' && i + 2 < s.length() && isxdigit(s[i+1]) && isxdigit(s[i+2])) {
+      o += (char)strtol(s.substring(i + 1, i + 3).c_str(), nullptr, 16);
+      i += 2;
+    } else o += c;
+  }
+  return o;
+}
+// Cari "key=" hanya di awal query atau setelah '&' (hindari salah-cocok "m=" di "frm=").
+static bool fxQ(const String &q, const char *key, String &out) {
+  String k = String(key) + "=";
+  int p = 0;
+  while (true) {
+    p = q.indexOf(k, p);
+    if (p < 0) return false;
+    if (p == 0 || q[p - 1] == '&') break;
+    p += 1;
+  }
+  int e = q.indexOf('&', p);
+  if (e < 0) e = q.length();
+  out = q.substring(p + k.length(), e);
+  return true;
+}
+static String fxHtmlEsc(const char *s) {
+  String o;
+  for (; *s; s++) {
+    switch (*s) {
+      case '&': o += "&amp;"; break;  case '<': o += "&lt;"; break;
+      case '>': o += "&gt;"; break;   case '"': o += "&quot;"; break;
+      case '\'': o += "&#39;"; break; default: o += *s;
+    }
+  }
+  return o;
+}
+
+// Command masuk dari app lewat RX characteristic. Command dikenal:
+// CONTACT_ON/OFF, NAV_VOICE:, MUSIC_*, dan NAV_TEXT: (matrix).
+class BleRxCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* c) override {
+    // Simpan versi case ASLI dulu (dipakai khusus utk NAV_TEXT, supaya
+    // teks di matrix gak ke-uppercase semua oleh value.toUpperCase() di
+    // bawah — huruf besar/kecil gak relevan buat command CONTACT_ON dkk,
+    // tapi relevan buat keterbacaan teks AT+NAV di layar matrix).
+    String rawValue = c->getValue().c_str();
+    rawValue.trim();
+    String value = rawValue;
+    value.toUpperCase();
+    Serial.print("BLE RX diterima (raw, sebelum parsing): \""); Serial.print(value); Serial.println("\"");
+    if (value.startsWith("NAV_TEXT:")) {
+      String navText = rawValue.substring(String("NAV_TEXT:").length());
+      navText.trim();
+      if (navText.length() == 0) navText = " ";
+      // JANGAN panggil showOnMatrix() langsung di sini — onWrite() ini
+      // jalan di thread/task BLE, BEDA dari loop() utama yang juga akses
+      // matrixDisp lewat displayAnimate(). 2 thread rebutan akses library
+      // yang sama (gak thread-safe) itu yang bikin matrix korup/blank.
+      // Fix: cuma simpan ke variabel, biar loop() yg beneran eksekusi.
+      // App (BLE) jadi pemilik Matrix mulai command ini -- menu /matrix
+      // tidak akan menimpa tampilan BLE sampai ada pilihan baru dari web.
+      matrixControlSource = MATRIX_SRC_BLE;
+      // Ditulis ke staging (thread BLE), BUKAN ke pendingMatrixText langsung --
+      // pendingMatrixText cuma pernah disentuh loop() sendiri, lihat catatan
+      // di deklarasinya di atas.
+      navText.toCharArray(pendingMatrixStaging, MATRIX_TEXT_BUF_LEN);
+      pendingMatrixIsOneShot = false; // NAV_TEXT: tampil terus sampai diganti
+      matrixUpdatePending = true;
+    } else if (value.startsWith("MATRIX_TEXT:")) {
+      // BARU: sebelumnya command ini gak dikenali sama sekali oleh firmware
+      // (jatuh ke default "command tidak dikenal" di paling bawah), makanya
+      // toggle data Matrix (SOC/kecepatan/dll) di app selama ini gak pernah
+      // benar-benar sampai ke matrix fisik. Sekarang ditangani sama seperti
+      // NAV_TEXT (ditulis ke staging dulu, loop() yg render -- thread-safe),
+      // tapi ditandai one-shot supaya loop() ngasih tau MATRIX_DONE begitu
+      // teksnya selesai tampil sekali, bukan looping selamanya kayak NAV_TEXT.
+      String mtxText = value.substring(String("MATRIX_TEXT:").length());
+      matrixControlSource = MATRIX_SRC_BLE;
+      mtxText.toCharArray(pendingMatrixStaging, MATRIX_TEXT_BUF_LEN);
+      pendingMatrixIsOneShot = true;
+      matrixUpdatePending = true;
+    } else if (value == "CAN_MODE:NORMAL") {
+      enqueueCanCmd(CANCMD_NORMAL);
+    } else if (value == "CAN_MODE:LISTEN") {
+      enqueueCanCmd(CANCMD_LISTEN);
+    } else if (value == "MID:ON") {
+      enqueueCanCmd(CANCMD_MID_ON);
+    } else if (value == "MID:OFF") {
+      enqueueCanCmd(CANCMD_MID_OFF);
+    } else if (value == "CAN_STATUS?") {
+      enqueueCanCmd(CANCMD_STATUS);
+    } else if (value.startsWith("SIMB:") || value.startsWith("SIMC:")) {
+      if (pendingSimQueryType == 0) { // slot masih dipakai loop() -> abaikan, app kirim ulang kalau perlu
+        String q = rawValue.substring(5);
+        q.trim();
+        q.toLowerCase();
+        q.toCharArray(pendingSimQuery, sizeof(pendingSimQuery));
+        pendingSimQueryType = value.startsWith("SIMB:") ? 1 : 2; // diset TERAKHIR (penanda siap dibaca loop)
+      }
+    } else if (value == "SIM:CONTROLLER") {
+      enqueueCanCmd(CANCMD_SIM_CTRL);
+    } else if (value == "SIM:BATTERY") {
+      enqueueCanCmd(CANCMD_SIM_BATT);
+    } else if (value == "SIM:OFF") {
+      enqueueCanCmd(CANCMD_SIM_OFF);
+    } else if (value == "CONTACT_ON") {
+      setContactRelay(true);
+    } else if (value == "CONTACT_OFF") {
+      setContactRelay(false);
+    } else if (value == "CONTACT?") {
+      bleSendLine(String("CONTACT=") + (contactRelayOn ? "1" : "0"));
+    } else if (value.startsWith("NAV_VOICE:")) {
+      // Voice navigasi dari app: "NAV_VOICE:<no track>" -> track 007-016 di
+      // folder 01 (isi file direkam/TTS manual, lihat daftar teks yg disepakati).
+      int track = value.substring(String("NAV_VOICE:").length()).toInt();
+      if (track > 0 && track <= 255) {
+        playTone((uint8_t)track);
+        Serial.print("NAV_VOICE: mainkan track "); Serial.println(track);
+      } else {
+        Serial.print("NAV_VOICE: nomor track tidak valid: "); Serial.println(value);
+      }
+    } else if (value.startsWith("MUSIC_PLAY:")) {
+      int track = value.substring(String("MUSIC_PLAY:").length()).toInt();
+      if (track > 0) { musicPlayTrack(track); Serial.print("MUSIC: play track "); Serial.println(track); }
+    } else if (value == "MUSIC_PAUSE" || value == "MUSIC_TOGGLE") {
+      musicPauseResume();
+      Serial.println("MUSIC: toggle play/pause");
+    } else if (value == "MUSIC_STOP") {
+      musicStopPlayback();
+      Serial.println("MUSIC: stop");
+    } else if (value == "MUSIC_NEXT") {
+      musicNextTrack();
+      Serial.print("MUSIC: next -> track "); Serial.println(musicCurrentTrack);
+    } else if (value == "MUSIC_PREV") {
+      musicPrevTrack();
+      Serial.print("MUSIC: prev -> track "); Serial.println(musicCurrentTrack);
+    } else if (value.startsWith("MUSIC_VOL:")) {
+      int vol = value.substring(String("MUSIC_VOL:").length()).toInt();
+      musicSetVolume(vol);
+      Serial.print("MUSIC: volume -> "); Serial.println(vol);
+    } else {
+      Serial.print("BLE: command tidak dikenal: "); Serial.println(value);
+    }
+  }
+};
+
+class BleServerCallbacks: public BLEServerCallbacks {
+  void onConnect(BLEServer* s) override {
+    bleClientConnected = true;
+    Serial.println("BLE: PWA client connected.");
+  }
+  void onDisconnect(BLEServer* s) override {
+    bleClientConnected = false;
+    Serial.println("BLE: PWA client disconnected, restarting advertising.");
+    delay(300);
+    BLEDevice::startAdvertising();
+  }
+};
+
+void setupBLE() {
+  BLEDevice::init(BLE_DEVICE_NAME);
+  bleServer = BLEDevice::createServer();
+  bleServer->setCallbacks(new BleServerCallbacks());
+
+  BLEService* service = bleServer->createService(BLE_SERVICE_UUID);
+  bleTxChar = service->createCharacteristic(
+    BLE_CHARACTERISTIC_UUID,
+    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
+  );
+  bleTxChar->addDescriptor(new BLE2902());
+
+  bleRxChar = service->createCharacteristic(
+    BLE_CHAR_RX_UUID,
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
+  );
+  bleRxChar->setCallbacks(new BleRxCallbacks());
+
+  service->start();
+
+  // Dulu cuma addServiceUUID()+setScanResponse(true) dan biarin library yg
+  // atur pembagian paket adv/scan-response otomatis — ternyata utk nama
+  // sepanjang "Gesits-ESP32-CAN" + UUID 128-bit custom, kombinasi itu bisa
+  // kepenuhan (>31 byte) dan library diam-diam nge-drop service UUID dari
+  // paket utama. Efeknya: device tetap kelihatan namanya di scan OS biasa,
+  // tapi HILANG dari scan yg di-filter by service UUID (persis kasus kita:
+  // app gak nemu device meski device kelihatan di Bluetooth setting HP).
+  // Fix: susun 2 paket secara eksplisit & terpisah — service UUID WAJIB di
+  // paket adv utama (biar kefilter), nama taruh di paket scan response.
+  BLEAdvertising* adv = BLEDevice::getAdvertising();
+
+  BLEAdvertisementData advData;
+  advData.setFlags(0x06); // LE General Discoverable + BR/EDR not supported
+  advData.setCompleteServices(BLEUUID(BLE_SERVICE_UUID));
+  adv->setAdvertisementData(advData);
+
+  BLEAdvertisementData scanRespData;
+  scanRespData.setName(BLE_DEVICE_NAME);
+  adv->setScanResponseData(scanRespData);
+
+  adv->setScanResponse(true);
+  BLEDevice::startAdvertising();
+
+  Serial.println("BLE peripheral started, advertising as: " BLE_DEVICE_NAME);
+  Serial.println("BLE: TX (notify) UUID = " BLE_CHARACTERISTIC_UUID);
+  Serial.println("BLE: RX (command/write) UUID = " BLE_CHAR_RX_UUID " <- kalau baris ini GAK MUNCUL, firmware yg jalan sekarang masih versi LAMA (belum punya fitur toggle kontak)");
+}
+
+// ============================================================
+// ── REMOTE FISIK (ESP32-C3 Super Mini + tombol tactile) ──
+// via ESP-NOW — SENGAJA BUKAN BLE kedua.
+//
+// Alasan: BLE di board ini cuma peripheral single-client (buat app HP).
+// Kalau remote juga mau connect lewat BLE, dia harus rebutan slot koneksi
+// yg sama dengan app — ribet & gampang konflik. ESP-NOW jalan di radio
+// WiFi yg sama (bareng dgn WiFi AP dashboard), gak ganggu BLE app sama
+// sekali, latensinya kecil, dan hemat baterai di sisi remote (gak perlu
+// nunggu proses connect/pairing BLE, cukup kirim 1 paket lalu tidur lagi).
+//
+// KEAMANAN (WAJIB dibaca sebelum pakai — ini nyalain/matiin kontak motor):
+//  1. Paket dienkripsi AES pakai PMK+LMK bawaan ESP-NOW (cuma device yg
+//     tau kunci yg sama yg bisa "ngobrol").
+//  2. Ada counter yg SELALU naik di tiap paket — kalau ada yg coba rekam
+//     & replay paket lama, DOIT bakal nolak krn counter-nya gak lebih
+//     besar dari yg terakhir diterima.
+//  3. Safety interlock kecepatan di setContactRelay() berlaku UNTUK
+//     REMOTE JUGA (bukan cuma app) — CONTACT_OFF ditolak kalau motor
+//     masih melaju, walau remote ketekan gak sengaja di kantong/tas.
+//
+// WAJIB DIGANTI sebelum dipakai beneran (jangan pakai contoh di bawah
+// apa adanya — siapa pun yg baca kode ini tau isinya):
+//   - ESPNOW_PMK / ESPNOW_LMK  : ganti ke 16 byte acak sendiri (sama persis
+//     di firmware DOIT ini & firmware remote).
+//   - REMOTE_MAC[]             : isi MAC address remote (dicetak di Serial
+//     Monitor pas pertama kali remote di-flash & boot).
+// ============================================================
+
+// PMK (Primary Master Key) & LMK (Local Master Key) — HARUS SAMA PERSIS
+// dengan yg di firmware remote (esp32c3_remote_kontak.ino). Wajib 16 byte.
+// GANTI 16 byte ini ke nilai acak sendiri (jangan dipakai apa adanya).
+static uint8_t ESPNOW_PMK[16] = {0x47,0x53,0x54,0x53,0x2D,0x50,0x4D,0x4B,0x2D,0x43,0x48,0x41,0x4E,0x47,0x45,0x21};
+static uint8_t ESPNOW_LMK[16] = {0x47,0x53,0x54,0x53,0x2D,0x4C,0x4D,0x4B,0x2D,0x43,0x48,0x41,0x4E,0x47,0x45,0x21};
+
+// MAC address remote (ESP32-C3 Super Mini). ISI SETELAH remote di-flash —
+// lihat Serial Monitor remote pas boot pertama, dia cetak MAC-nya sendiri.
+// Format: {0xXX,0xXX,0xXX,0xXX,0xXX,0xXX}
+static uint8_t REMOTE_MAC[6] = {0xE8,0x3D,0xC1,0x9D,0xA4,0x18}; // <- GANTI!
+
+// Command yg dikenal dari remote
+#define REMOTE_CMD_TOGGLE_CONTACT 1
+
+// Paket dari remote -> DOIT
+typedef struct __attribute__((packed)) {
+  uint32_t counter; // anti-replay: harus > lastRemoteCounter
+  uint8_t  cmd;      // REMOTE_CMD_TOGGLE_CONTACT
+} RemoteCmdPacket;
+
+// Paket balasan (ACK) DOIT -> remote, biar remote bisa kasih feedback LED
+// (berhasil ON/OFF, atau ditolak krn motor masih jalan) tanpa perlu app.
+typedef struct __attribute__((packed)) {
+  uint8_t ok;        // 1 = command diterima & dieksekusi, 0 = ditolak
+  uint8_t contactOn; // state kontak SETELAH command ini (0/1)
+} RemoteAckPacket;
+
+uint32_t lastRemoteCounter = 0; // reset ke 0 tiap DOIT reboot — aman krn
+                                 // counter remote monoton naik dari RTC
+                                 // memory, jadi paket pertama pasti > 0.
+
+// Callback ESP-NOW recv — signature-nya BEDA antara core ESP32 lama
+// (2.0.x, berbasis ESP-IDF 4.4: mac address langsung sbg uint8_t*) dan
+// core baru (3.x, berbasis ESP-IDF 5.x: dibungkus esp_now_recv_info_t*).
+// #if di bawah otomatis pilih versi yg cocok sesuai core yg ke-install,
+// jadi gak perlu ubah manual walau ke-install core versi mana pun
+// (relevan krn ArduinoDroid biasanya auto-install core TERBARU, beda
+// dari komentar "core 2.0.14" di header file ini yg nyebut Arduino IDE
+// desktop).
+
+#if ESP_IDF_VERSION_MAJOR >= 5
+void onEspNowRecv(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
+  const uint8_t* mac = info->src_addr;
+#else
+void onEspNowRecv(const uint8_t* mac, const uint8_t* data, int len) {
+#endif
+  // Cuma terima dari MAC remote yg terdaftar — paket dari device lain
+  // (walau entah gimana caranya lolos dekripsi) diabaikan.
+  bool macMatch = true;
+  for (int i = 0; i < 6; i++) if (mac[i] != REMOTE_MAC[i]) { macMatch = false; break; }
+  if (!macMatch || len != sizeof(RemoteCmdPacket)) {
+    Serial.println("ESP-NOW: paket diabaikan (MAC tidak dikenal / ukuran salah).");
+    return;
+  }
+
+  RemoteCmdPacket pkt;
+  memcpy(&pkt, data, sizeof(pkt));
+
+  if (pkt.counter <= lastRemoteCounter) {
+    Serial.print("ESP-NOW: paket DITOLAK (replay/counter mundur) counter=");
+    Serial.print(pkt.counter); Serial.print(" terakhir="); Serial.println(lastRemoteCounter);
+    RemoteAckPacket ack = {0, (uint8_t)(contactRelayOn ? 1 : 0)};
+    esp_now_send(REMOTE_MAC, (uint8_t*)&ack, sizeof(ack));
+    return;
+  }
+  lastRemoteCounter = pkt.counter;
+
+  bool ok = false;
+  if (pkt.cmd == REMOTE_CMD_TOGGLE_CONTACT) {
+    Serial.println("ESP-NOW: TOGGLE_CONTACT dari remote.");
+    ok = setContactRelay(!contactRelayOn); // false balik kalau ditolak interlock kecepatan
+  } else {
+    Serial.print("ESP-NOW: command tidak dikenal: "); Serial.println(pkt.cmd);
+  }
+
+  RemoteAckPacket ack = {(uint8_t)(ok ? 1 : 0), (uint8_t)(contactRelayOn ? 1 : 0)};
+  esp_now_send(REMOTE_MAC, (uint8_t*)&ack, sizeof(ack));
+}
+
+void setupEspNowRemote() {
+  // PENTING: ESP-NOW & WiFi AP harus di channel yg SAMA. WiFi.softAP() di
+  // setup() sudah dipaksa ke channel 1 secara eksplisit (lihat parameter
+  // ke-3) — remote juga di-set fix ke channel 1, jadi ketemu tanpa perlu
+  // scan/sync tambahan.
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("ESP-NOW: init GAGAL — remote kontak fisik tidak akan berfungsi.");
+    return;
+  }
+  esp_now_register_recv_cb(onEspNowRecv);
+  esp_now_set_pmk(ESPNOW_PMK);
+ 
+esp_now_peer_info_t peer = {};
+memcpy(peer.peer_addr, REMOTE_MAC, 6);
+peer.channel = 6;
+peer.encrypt = true;
+memcpy(peer.lmk, ESPNOW_LMK, 16);
+#if ENABLE_WIFI_DASHBOARD
+peer.ifidx = WIFI_IF_AP; // DOIT jalan di mode WIFI_AP
+#else
+peer.ifidx = WIFI_IF_STA; // dashboard off -> DOIT jalan di mode WIFI_STA
+#endif
+
+// DEBUG: print MAC yang beneran dipakai saat runtime
+Serial.printf("DEBUG REMOTE_MAC runtime = %02X:%02X:%02X:%02X:%02X:%02X\n",
+              peer.peer_addr[0], peer.peer_addr[1], peer.peer_addr[2],
+              peer.peer_addr[3], peer.peer_addr[4], peer.peer_addr[5]);
+
+if (esp_now_add_peer(&peer) != ESP_OK) {
+    Serial.println("ESP-NOW: gagal daftarin peer remote — cek REMOTE_MAC[] sudah diisi belum.");
+  } else {
+    Serial.println("ESP-NOW: siap terima command dari remote kontak fisik.");
+  }
+}
+
+// ---------------- VOTOL PROGRAMMER TOOL ----------------
+volatile bool votolWriteUnlocked = false;
+// Dipindah ke sini (sebelumnya dideklarasikan bareng sisa kode heartbeat MID,
+// setelah setupCAN()) supaya sudah dikenal sebelum votolStatusJson() dan
+// serviceMidHeartbeat() memakainya. Definisi lengkap heartbeat (struct,
+// sendMidFrame, serviceMidHeartbeat) tetap di dekat setupCAN() -- cuma flag
+// on/off-nya yang perlu naik ke atas.
+// Digabung jadi SATU state exclusive (bukan bool terpisah lagi) sejak MID
+// Emulator, Controller Simulator, dan Battery Simulator digabung ke sketch
+// ini. Alasan WAJIB exclusive: MID Emulator kirim RTR di ID yang SAMA PERSIS
+// dengan yang dipakai Battery Simulator buat data (0x10261100/0x10261200 dst).
+// Kalau dua-duanya nyala bareng, 2 node bakal transmit di 1 ID yang sama di
+// saat berdekatan -> collision/error CAN, bukan cuma "data ketimpa" kayak di
+// sisi decode. Jadi cuma boleh 1 yang aktif: OFF, MID, CONTROLLER_SIM, atau
+// BATTERY_SIM -- persis pola yang sudah dipakai & proven di sketch emulator.
+enum OpMode { OP_OFF = 0, OP_MID, OP_CONTROLLER_SIM, OP_BATTERY_SIM };
+volatile int opMode = OP_OFF; // default aman: gak ngirim apa-apa
+uint32_t votolWriteUnlockUntil = 0;
+uint32_t votolLastReadAt = 0;
+String votolReplyHex = "";
+uint8_t votolReplyBuf[24];
+uint8_t votolReplyLen = 0;
+uint8_t votolReplyFrames = 0;
+uint8_t votolCanReply[3][8] = {};
+uint8_t votolCanReplyDlc[3] = {};
+uint32_t votolCanReplyAt[3] = {};
+bool votolCanLiveValid = false;
+uint16_t votolCanVoltageRaw = 0;
+int16_t votolCanCurrentRaw = 0;
+int16_t votolCanRpm = 0;
+int16_t votolCanControllerTemp = 0;
+int16_t votolCanMotorTemp = 0;
+uint8_t votolCanState = 0;
+uint8_t votolCanError[4] = {};
+
+String bytesToHex(const uint8_t *data, uint8_t len) {
+  const char *hex = "0123456789ABCDEF";
+  String out;
+  for (uint8_t i = 0; i < len; i++) {
+    if (i) out += " ";
+    out += hex[(data[i] >> 4) & 0x0F];
+    out += hex[data[i] & 0x0F];
+  }
+  return out;
+}
+
+bool parseHexByte(const String &src, uint8_t &out) {
+  String x = src;
+  x.trim();
+  if (x.length() != 2) return false;
+  char *endp = nullptr;
+  long v = strtol(x.c_str(), &endp, 16);
+  if (endp == x.c_str() || *endp != '\0' || v < 0 || v > 255) return false;
+  out = (uint8_t)v;
+  return true;
+}
+
+// ---------------- Helper query-param generik (dipakai simulator manual input) ----------------
+String extractQuery(const String &reqLine) {
+  int q = reqLine.indexOf('?');
+  int sp = reqLine.indexOf(' ', q);
+  return (q >= 0 && sp > q) ? reqLine.substring(q + 1, sp) : "";
+}
+bool getQueryParamStr(const String &query, const char *key, String &out) {
+  String k = String(key) + "=";
+  int p = query.indexOf(k);
+  if (p < 0) return false;
+  int e = query.indexOf('&', p);
+  if (e < 0) e = query.length();
+  out = query.substring(p + k.length(), e);
+  return true;
+}
+// def dikembalikan apa adanya kalau param gak dikirim -- dipakai supaya field
+// yang gak diisi di form tetap pakai nilai TERAKHIR, bukan ke-reset ke 0.
+int getQueryParamInt(const String &query, const char *key, int def) {
+  String s;
+  if (!getQueryParamStr(query, key, s)) return def;
+  return s.toInt();
+}
+float getQueryParamFloat(const String &query, const char *key, float def) {
+  String s;
+  if (!getQueryParamStr(query, key, s)) return def;
+  return s.toFloat();
+}
+
+// Dipindah ke sini (sebelumnya di bawah, dekat reinitTWAI()) supaya sudah
+// dikenal sebelum sendVotolCan(), votolRequestLiveData(), dan votolStatusJson()
+// memakainya duluan di atas ini.
+volatile bool listenOnlyMode = true;
+
+// Catatan: default value "= false" SENGAJA DIHAPUS dari sini. Semua
+// pemanggilan sendVotolCan() di file ini selalu mengirim 4 argumen eksplisit,
+// jadi default itu tidak pernah terpakai — tapi keberadaannya bikin Arduino
+// IDE membuat auto-prototype yang ikut membawa default value yang sama,
+// dan C++ melarang default value dispesifikasikan dua kali (di definisi ASLI
+// dan di auto-prototype) untuk parameter yang sama -> error -fpermissive.
+bool sendVotolCan(uint32_t id, const uint8_t *data, uint8_t len, bool extended) {
+  if (len > 8) return false;
+  if (listenOnlyMode) {
+    Serial.println("VOTOL WRITE: ditolak — CAN masih LISTEN_ONLY.");
+    return false;
+  }
+  twai_message_t m = {};
+  m.identifier = id;
+  m.extd = extended ? 1 : 0;
+  m.rtr = 0;
+  m.data_length_code = len;
+  memcpy(m.data, data, len);
+  esp_err_t e = twai_transmit(&m, pdMS_TO_TICKS(250));
+  if (e != ESP_OK) {
+    Serial.printf("VOTOL CAN TX gagal: %d\n", (int)e);
+    return false;
+  }
+  Serial.printf("VOTOL CAN TX id=%lX dlc=%u data=%s\n",
+                (unsigned long)id, len, bytesToHex(data, len).c_str());
+  return true;
+}
+
+// Known VOTOL live-data request. Two standard CAN frames are sent to 0x3FF;
+// the controller returns three standard CAN frames on 0x3FE.
+// The three CAN frames must remain separate: the byte layout is meaningful.
+bool votolRequestLiveData() {
+  if (listenOnlyMode) {
+    Serial.println("VOTOL READ: CAN masih LISTEN_ONLY -> pindah ke NORMAL dulu.");
+    return false;
+  }
+
+  const uint8_t q1[8] = {0x09,0x55,0xAA,0xAA,0x00,0xAA,0x00,0x00};
+  const uint8_t q2[8] = {0x00,0x18,0xAA,0x05,0xD2,0x00,0x20,0x33};
+
+  votolReplyHex = "";
+  votolReplyLen = 0;
+  votolReplyFrames = 0;
+  votolCanLiveValid = false;
+  memset(votolCanReply, 0, sizeof(votolCanReply));
+  memset(votolCanReplyDlc, 0, sizeof(votolCanReplyDlc));
+  memset(votolCanReplyAt, 0, sizeof(votolCanReplyAt));
+
+  // Clear old frames from the RX queue so the next response belongs to this query.
+  twai_message_t dump;
+  while (twai_receive(&dump, 0) == ESP_OK) {}
+
+  // Timestamp BEFORE TX: a very fast controller can answer the first request
+  // before the second request has completed.
+  votolLastReadAt = millis();
+  bool ok1 = sendVotolCan(VOTOL_PROG_ID, q1, 8, false);
+  delay(3);
+  bool ok2 = sendVotolCan(VOTOL_PROG_ID, q2, 8, false);
+
+  Serial.printf("VOTOL READ request: %s/%s\n", ok1 ? "OK" : "FAIL", ok2 ? "OK" : "FAIL");
+  return ok1 && ok2;
+}
+
+// Raw parameter writing is guarded because the actual Votol write map is model/firmware
+// dependent and undocumented.  This lets us use verified frames without pretending a
+// guessed register map is safe.
+bool votolRawWrite(uint32_t id, const uint8_t *data, uint8_t len, bool extended) {
+  if (!votolWriteUnlocked || millis() > votolWriteUnlockUntil) {
+    votolWriteUnlocked = false;
+    return false;
+  }
+  if (telem.speedKmh > 0.5f) {
+    Serial.printf("VOTOL WRITE ditolak: speed %.1f km/h bukan 0.\n", telem.speedKmh);
+    return false;
+  }
+  if (contactRelayOn) {
+    Serial.println("VOTOL WRITE ditolak: CONTACT masih ON. Matikan kontak dulu.");
+    return false;
+  }
+  return sendVotolCan(id, data, len, extended);
+}
+
+void decodeVotolCanLive() {
+  if (votolReplyFrames < 3) {
+    votolCanLiveValid = false;
+    return;
+  }
+  const uint8_t *a = votolCanReply[0];
+  const uint8_t *b = votolCanReply[1];
+  const uint8_t *c = votolCanReply[2];
+  // Layout confirmed by the open VOTOL reverse-engineering implementation:
+  // #1: ... battery-voltage high byte
+  // #2: battery-voltage low, battery-current high/low, 4 error bytes
+  // #3: RPM high/low, controller temp+50, motor temp+50, 00 00, 01, state.
+  if (votolCanReplyDlc[0] < 8 || votolCanReplyDlc[1] < 8 || votolCanReplyDlc[2] < 8) {
+    votolCanLiveValid = false;
+    return;
+  }
+  votolCanVoltageRaw = ((uint16_t)a[7] << 8) | b[0];
+  votolCanCurrentRaw = (int16_t)(((uint16_t)b[1] << 8) | b[2]);
+  votolCanError[0] = b[4];
+  votolCanError[1] = b[5];
+  votolCanError[2] = b[6];
+  votolCanError[3] = b[7];
+  votolCanRpm = (int16_t)(((uint16_t)c[0] << 8) | c[1]);
+  votolCanControllerTemp = (int16_t)c[2] - 50;
+  votolCanMotorTemp = (int16_t)c[3] - 50;
+  votolCanState = c[7];
+  votolCanLiveValid = true;
+}
+
+String votolStatusJson() {
+  bool unlocked = votolWriteUnlocked && millis() <= votolWriteUnlockUntil;
+  if (!unlocked) votolWriteUnlocked = false;
+  String j = "{\"listenOnly\":";
+  j += listenOnlyMode ? "true" : "false";
+  j += ",\"midEmulate\":";
+  j += (opMode == OP_MID) ? "true" : "false";
+  j += ",\"opMode\":";
+  j += opMode;
+  j += ",\"writeUnlocked\":";
+  j += unlocked ? "true" : "false";
+  j += ",\"speed\":";
+  j += String(telem.speedKmh, 1);
+  j += ",\"replyFrames\":";
+  j += String(votolReplyFrames);
+  j += ",\"canLiveValid\":";
+  j += votolCanLiveValid ? "true" : "false";
+  j += ",\"voltageRaw\":"; j += String(votolCanVoltageRaw);
+  j += ",\"voltage\":"; j += String(votolCanVoltageRaw / 10.0f, 1);
+  j += ",\"currentRaw\":"; j += String(votolCanCurrentRaw);
+  j += ",\"current\":"; j += String(votolCanCurrentRaw / 10.0f, 1);
+  j += ",\"rpm\":"; j += String(votolCanRpm);
+  j += ",\"controllerTemp\":"; j += String(votolCanControllerTemp);
+  j += ",\"motorTemp\":"; j += String(votolCanMotorTemp);
+  j += ",\"state\":"; j += String(votolCanState);
+  j += ",\"errors\":[";
+  for (int i=0;i<4;i++) { if(i) j += ','; j += String(votolCanError[i]); }
+  j += "],\"replyHex\":\"";
+  j += votolReplyHex;
+  j += "\",\"frames\":[";
+  for (int f=0; f<3; f++) { if(f) j += ','; j += "\""; j += bytesToHex(votolCanReply[f], votolCanReplyDlc[f]); j += "\""; }
+  j += "]}";
+  return j;
+}
+// -------------------------------------------------------
+
+// ---------------- Embedded web page ----------------
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gesits CAN Sniffer</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --border:#2a313c;
+    --text:#e6edf3; --dim:#8b949e; --accent:#5ee6a0; --warn:#ff7b72;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,sans-serif; padding:12px;}
+  h1{font-size:18px; margin:0 0 4px 0; font-weight:600;}
+  .sub{color:var(--dim); font-size:12px; margin-bottom:14px;}
+  .status{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px;}
+  .chip{background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:6px 10px; font-size:12px; color:var(--dim);}
+  .chip b{color:var(--text);}
+  .dot{display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--warn); margin-right:6px;}
+  .dot.live{background:var(--accent); box-shadow:0 0 6px var(--accent);}
+  table{width:100%; border-collapse:collapse; font-size:12px; background:var(--panel); border-radius:10px; overflow:hidden;}
+  th,td{padding:8px 6px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap;}
+  th{color:var(--dim); font-weight:500; font-size:11px; text-transform:uppercase; letter-spacing:.03em;}
+  td.id{color:var(--accent); font-family:ui-monospace,Menlo,monospace; font-weight:600;}
+  td.data{font-family:ui-monospace,Menlo,monospace; letter-spacing:.05em;}
+  td.count{color:var(--dim); text-align:right;}
+  tr.flash{ animation: flash 0.4s ease-out; }
+  @keyframes flash{ from{background:#1f2b22;} to{background:transparent;} }
+  .empty{color:var(--dim); text-align:center; padding:30px 0; font-size:13px;}
+  #wrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .btnrow{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;}
+  button{background:var(--accent); color:#0e1116; border:none; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer;}
+  button.secondary{background:transparent; color:var(--dim); border:1px solid var(--border);}
+  button.secondary.active{background:var(--accent); color:#0e1116; border-color:var(--accent);}
+  button:not(.secondary).active{box-shadow:0 0 0 2px #fff inset;}
+  button:active{ opacity:0.7; }
+  .cards{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:16px;}
+  @media (max-width:420px){ .cards{ grid-template-columns:1fr; } }
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px;}
+  .card h3{margin:0 0 8px 0; font-size:13px; color:var(--text); display:flex; align-items:center; gap:6px;}
+  .card .src{font-size:10px; color:var(--dim); font-weight:400; margin-left:auto; font-family:ui-monospace,Menlo,monospace;}
+  .kv{ display:flex; justify-content:space-between; font-size:12px; padding:3px 0; }
+  .kv span:first-child{ color:var(--dim); }
+  .kv span:last-child{ font-family:ui-monospace,Menlo,monospace; font-weight:600; }
+  .flags{ display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
+  .flag{ font-size:10px; padding:3px 7px; border-radius:12px; background:#1c2128; color:var(--dim); border:1px solid var(--border); }
+  .flag.on{ background:rgba(94,230,160,0.15); color:var(--accent); border-color:var(--accent); }
+  .modebox{background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .modebox .label{ font-size:13px; }
+  .modebox .modenow{ font-size:11px; color:var(--dim); }
+  .switch{position:relative; display:inline-block; width:46px; height:26px; flex-shrink:0;}
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{position:absolute; cursor:pointer; inset:0; background:#2a313c; transition:.2s; border-radius:26px;}
+  .slider:before{position:absolute; content:""; height:20px; width:20px; left:3px; bottom:3px; background:white; transition:.2s; border-radius:50%;}
+  input:checked + .slider{ background:var(--warn); }
+  input:checked + .slider:before{ transform:translateX(20px); }
+  .modewarn{ font-size:11px; color:var(--warn); width:100%; display:none; }
+  .modewarn.show{ display:block; }
+</style>
+<style>
+.vgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.vgrid label{font-size:10px;color:var(--dim)}.vgrid input,.vgrid select{width:100%;box-sizing:border-box;margin-top:3px;background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:7px;font:11px monospace}.vpt{width:100%;border-collapse:collapse;font-size:10px}.vpt th,.vpt td{border:1px solid var(--border);padding:5px;white-space:nowrap}.vpt input,.vpt select{background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:5px;padding:4px;font-size:10px;width:100%;box-sizing:border-box}@media(max-width:700px){.vgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.votol-status{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;background:#10141b;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin:10px 0}.votol-status .kv{padding:4px 0;border-bottom:1px dashed #232a33}.votol-status .kv:last-child,.votol-status .kv:nth-last-child(2){border-bottom:none}
+details{background:#10141b;border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:10px}details summary{list-style:none;cursor:pointer}details summary::-webkit-details-marker{display:none}details summary:before{content:'\25B8\0020';color:var(--accent);display:inline-block;width:12px}details[open] summary:before{content:'\25BE\0020'}
+.votol-note{font-size:10px;color:var(--dim);margin:6px 0}.votol-warn{font-size:10px;color:var(--warn);margin-top:6px}
+</style>
+</head>
+<body>
+  <h1>&#128295; Gesits CAN Sniffer</h1>
+  <div class="sub">Live monitor - Votol EM100 CAN bus</div>
+  <div class="btnrow" style="margin-bottom:8px;">
+    <a href="/matrix" style="text-decoration:none;"><button class="secondary" type="button">&#128223; Matrix Display &rarr;</button></a>
+  </div>
+
+  <div class="modebox">
+    <label class="switch">
+      <input type="checkbox" id="modeToggle">
+      <span class="slider"></span>
+    </label>
+    <div>
+      <div class="label">Mode CAN: <b id="modeLabel">Listen-only</b></div>
+      <div class="modenow" id="modeDesc">Pasif, tidak ikut ACK frame di bus (paling aman)</div>
+    </div>
+    <div class="modewarn" id="modeWarn">
+      &#9888; Mode Normal: ESP32 akan ikut meng-ACK frame CAN di bus (jadi node aktif, bukan pasif lagi).
+      Cukup aman untuk sekadar ACK, tapi pastikan wiring CANH/CANL benar sebelum dipakai di kondisi nyata.
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="chip"><span id="statusDot" class="dot"></span><b id="statusText">Connecting...</b></div>
+    <div class="chip">Frame diterima: <b id="totalCount">0</b></div>
+    <div class="chip">ID unik: <b id="uniqueCount">0</b></div>
+    <div class="chip">Log tersimpan: <b id="logCount">0</b></div>
+  </div>
+
+  <div class="cards">
+    <div class="card" id="cardBattery">
+      <h3>&#128267; Baterai <span class="src" id="battSrc">-</span></h3>
+      <div class="kv"><span>SoC</span><span id="battSoc">-</span></div>
+      <div class="kv"><span>SOH</span><span id="battSoh">-</span></div>
+      <div class="kv"><span>Suhu</span><span id="battTemp">-</span></div>
+      <div class="kv"><span>Voltase</span><span id="battVolt">-</span></div>
+      <div class="kv"><span>Arus</span><span id="battCurrent">-</span></div>
+      <div class="kv"><span>Siklus charge</span><span id="battCycle">-</span></div>
+      <div class="kv"><span>Auth flag (0x1030)</span><span id="battAuth">-</span></div>
+    </div>
+
+    <div class="card" id="cardMotor">
+      <h3>&#127949; Motor / Kontroler</h3>
+      <div class="kv"><span>Mode berkendara</span><span id="motoMode">-</span></div>
+      <div class="kv"><span>Suhu inverter</span><span id="motoTempInv">-</span></div>
+      <div class="kv"><span>Suhu motor</span><span id="motoTempMotor">-</span></div>
+      <div class="kv"><span>Torque/arus (raw)</span><span id="motoTorque">-</span></div>
+      <div class="kv"><span>Gas (throttle)</span><span id="motoThrottle">-</span></div>
+      <div class="kv"><span>Kecepatan (estimasi)</span><span id="motoSpeed">-</span></div>
+      <div class="flags" id="motoFlags"></div>
+    </div>
+  </div>
+
+  <div class="btnrow">
+    <button id="btnDownload">&#11015; Download CSV (log lengkap)</button>
+    <button id="btnClear" class="secondary">&#128465; Clear log</button>
+    <a href="/cantool"><button class="secondary" type="button">&#9881; CAN Tool (bitrate / TX)</button></a>
+  </div>
+
+  <div id="wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID (hex)</th>
+          <th>DLC</th>
+          <th>RTR</th>
+          <th>Data (hex)</th>
+          <th>Count</th>
+          <th>Terakhir (ms)</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="6" class="empty">Menunggu frame CAN pertama...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+<script>
+  const rows = {};
+  const rawLog = [];
+  const MAX_LOG = 20000;
+
+  const tbody = document.getElementById('tbody');
+  const totalCountEl = document.getElementById('totalCount');
+  const uniqueCountEl = document.getElementById('uniqueCount');
+  const logCountEl = document.getElementById('logCount');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  let total = 0;
+
+  const el = {
+    battSrc: document.getElementById('battSrc'),
+    battSoc: document.getElementById('battSoc'),
+    battSoh: document.getElementById('battSoh'),
+    battTemp: document.getElementById('battTemp'),
+    battVolt: document.getElementById('battVolt'),
+    battCurrent: document.getElementById('battCurrent'),
+    battCycle: document.getElementById('battCycle'),
+    battAuth: document.getElementById('battAuth'),
+    motoMode: document.getElementById('motoMode'),
+    motoTempInv: document.getElementById('motoTempInv'),
+    motoTempMotor: document.getElementById('motoTempMotor'),
+    motoTorque: document.getElementById('motoTorque'),
+    motoThrottle: document.getElementById('motoThrottle'),
+    motoSpeed: document.getElementById('motoSpeed'),
+    motoFlags: document.getElementById('motoFlags'),
+  };
+
+  function s8(v){ return v > 127 ? v - 256 : v; }
+  function s16le(lo, hi){ let v = lo | (hi << 8); return v > 32767 ? v - 65536 : v; }
+
+  function decodeBattery(f, idLabel) {
+    if (f.rtr || f.dlc < 6) return;
+    el.battSrc.textContent = '0x' + idLabel;
+    el.battSoc.textContent = f.data[1] + ' %';
+    el.battSoh.textContent = f.data[2] + ' %';
+    el.battTemp.textContent = f.data[3] + ' \u00B0C';
+    el.battVolt.textContent = f.data[4] + ' V';
+    el.battCurrent.textContent = s8(f.data[5]) + ' A';
+  }
+
+  function decodeCycle(f) {
+    if (f.rtr) return;
+    if (f.dlc >= 7) el.battCycle.textContent = f.data[6] + 'x';
+  }
+
+  function decodeAuthFlag(f) {
+    if (f.rtr) return;
+    if (f.dlc >= 1) el.battAuth.textContent = '0x' + f.data[0].toString(16).padStart(2,'0');
+  }
+
+  function decodeMotor022(f) {
+    if (f.rtr) return;
+    const b1 = f.data[1];
+    let mode = 'Eco';
+    const modeBits = b1 & 0xC0;
+    if (modeBits === 0x40) mode = 'Urban';
+    else if (modeBits === 0xC0) mode = 'Sport';
+    el.motoMode.textContent = mode;
+
+    el.motoTempInv.textContent = f.data[4] + ' \u00B0C';
+    el.motoTempMotor.textContent = f.data[5] + ' \u00B0C';
+
+    if (f.dlc >= 8) {
+      const torque = s16le(f.data[6], f.data[7]);
+      el.motoTorque.textContent = torque;
+    }
+
+    const speedRaw16 = f.data[2] | (f.data[3] << 8);
+    const speedKmh = speedRaw16 / 12;
+    el.motoSpeed.textContent = speedKmh.toFixed(1) + ' km/h (raw:' + speedRaw16 + ')';
+
+    const flags = [
+      {label: (b1 & 0x01) !== 0 ? 'Park' : 'Drive', on: true},
+      {label: 'Rem', on: (b1 & 0x04) !== 0},
+      {label: 'Cruise', on: (b1 & 0x08) !== 0},
+      {label: 'Side stand', on: (b1 & 0x10) !== 0},
+    ];
+    el.motoFlags.innerHTML = flags.map(fl =>
+      `<span class="flag${fl.on ? ' on' : ''}">${fl.label}</span>`
+    ).join('');
+  }
+
+  function decodeMotor023(f) {
+    if (f.rtr) return;
+    if (f.dlc >= 8) el.motoThrottle.textContent = f.data[2] + ' %';
+  }
+
+  function render(id) {
+    const r = rows[id];
+    if (!r.el) {
+      if (tbody.querySelector('.empty')) tbody.innerHTML = '';
+      r.el = document.createElement('tr');
+      r.el.innerHTML = '<td class="id"></td><td></td><td></td><td class="data"></td><td class="count"></td><td></td>';
+      tbody.appendChild(r.el);
+    }
+    const cells = r.el.children;
+    cells[0].textContent = '0x' + id;
+    cells[1].textContent = r.dlc;
+    cells[2].textContent = r.rtr ? 'ya' : '-';
+    cells[3].textContent = r.data;
+    cells[4].textContent = r.count;
+    cells[5].textContent = r.last;
+    r.el.classList.remove('flash'); void r.el.offsetWidth; r.el.classList.add('flash');
+  }
+
+  function connect() {
+    const es = new EventSource('/events');
+    es.onopen = () => { statusDot.classList.add('live'); statusText.textContent = 'Live'; };
+    es.onerror = () => { statusDot.classList.remove('live'); statusText.textContent = 'Terputus, mencoba lagi...'; };
+    es.onmessage = (e) => {
+      try {
+        const f = JSON.parse(e.data);
+        total++;
+        totalCountEl.textContent = total;
+        if (!rows[f.id]) {
+          rows[f.id] = {count:0};
+          uniqueCountEl.textContent = Object.keys(rows).length;
+        }
+        const r = rows[f.id];
+        r.dlc = f.dlc;
+        r.rtr = f.rtr;
+        r.data = f.data.map(b => b.toString(16).padStart(2,'0')).join(' ');
+        r.count++;
+        r.last = f.t;
+        render(f.id);
+
+        if (f.id === '10261100' || f.id === '10261200') decodeBattery(f, f.id);
+        else if (f.id === '10261202') decodeCycle(f);
+        else if (f.id === '10261030') decodeAuthFlag(f);
+        else if (f.id === '10261022') decodeMotor022(f);
+        else if (f.id === '10261023') decodeMotor023(f);
+
+        if (rawLog.length >= MAX_LOG) rawLog.shift();
+        rawLog.push({t: f.t, id: f.id, dlc: f.dlc, rtr: f.rtr, data: r.data});
+        logCountEl.textContent = rawLog.length;
+      } catch(err) { /* ignore malformed */ }
+    };
+  }
+  connect();
+
+  function downloadCSV() {
+    if (rawLog.length === 0) { alert('Belum ada data untuk di-export.'); return; }
+    let csv = 'timestamp_ms,id_hex,dlc,rtr,data_hex\n';
+    for (const row of rawLog) {
+      csv += `${row.t},0x${row.id},${row.dlc},${row.rtr ? 1 : 0},"${row.data}"\n`;
+    }
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    a.href = url;
+    a.download = `gesits_can_log_${stamp}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function clearLog() {
+    if (!confirm('Hapus semua log yang tersimpan di halaman ini? (Tidak bisa dibatalkan)')) return;
+    rawLog.length = 0;
+    logCountEl.textContent = 0;
+  }
+
+  document.getElementById('btnDownload').addEventListener('click', downloadCSV);
+  document.getElementById('btnClear').addEventListener('click', clearLog);
+
+  const modeToggle = document.getElementById('modeToggle');
+  const modeLabel = document.getElementById('modeLabel');
+  const modeDesc = document.getElementById('modeDesc');
+  const modeWarn = document.getElementById('modeWarn');
+
+  function applyModeUI(mode) {
+    const isNormal = (mode === 'normal');
+    modeToggle.checked = isNormal;
+    modeLabel.textContent = isNormal ? 'Normal (ikut ACK)' : 'Listen-only';
+    modeDesc.textContent = isNormal
+      ? 'ESP32 ikut meng-ACK frame di bus - dipakai saat tap ke device terbatas (mis. hanya MID+baterai)'
+      : 'Pasif, tidak ikut ACK frame di bus (paling aman)';
+    modeWarn.classList.toggle('show', isNormal);
+  }
+
+  fetch('/mode').then(r => r.json()).then(d => applyModeUI(d.mode)).catch(() => {});
+
+  modeToggle.addEventListener('change', () => {
+    const wantNormal = modeToggle.checked;
+    if (wantNormal && !confirm(
+      'Ganti ke mode NORMAL?\n\nESP32 akan mulai ikut meng-ACK frame CAN di bus (tidak 100% pasif lagi). ' +
+      'Pastikan wiring CANH/CANL sudah benar. Lanjutkan?'
+    )) {
+      modeToggle.checked = false;
+      return;
+    }
+    const target = wantNormal ? 'normal' : 'listen';
+    fetch('/mode?set=' + target)
+      .then(r => r.json())
+      .then(d => applyModeUI(d.mode))
+      .catch(() => alert('Gagal mengubah mode, cek koneksi ke ESP32.'));
+  });
+</script>
+
+  <section id="votolTool" style="margin-top:18px;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px;">
+    <h2 style="margin:0 0 6px;font-size:15px;">&#128736; VOTOL Programmer Tool</h2>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:10px;">
+      Read live block dari EM controller + raw CAN write untuk frame yang sudah diverifikasi.
+      Write dikunci dan hanya boleh saat motor berhenti serta kontak OFF.
+    </div>
+    <div class="btnrow">
+      <button onclick="votolRead()">READ VOTOL</button>
+      <button class="secondary" onclick="votolUnlock()">UNLOCK WRITE 60s</button>
+      <button class="secondary" onclick="votolStatus()">STATUS</button>
+    </div>
+    <div class="btnrow" style="margin-top:6px;">
+      <button id="btnMidOn" onclick="setSimMode('mid')">MID EMULATE: ON</button>
+      <button id="btnMidOff" class="secondary" onclick="setSimMode('off')">MID EMULATE: OFF</button>
+    </div>
+    <div style="font-size:11px;color:var(--dim);margin:4px 0 10px;">
+      Niru heartbeat MID (rentetan RTR tiap ~1 detik) supaya controller/baterai tetap broadcast
+      tanpa MID fisik. Cuma jalan kalau CAN mode NORMAL.
+    </div>
+    <div class="btnrow">
+      <button id="btnSimController" class="secondary" onclick="setSimMode('controller')">CONTROLLER SIMULATOR</button>
+      <button id="btnSimBattery" class="secondary" onclick="setSimMode('battery')">BATTERY SIMULATOR</button>
+    </div>
+    <div id="simWarn" style="display:none;font-size:11px;color:var(--warn);margin:6px 0 10px;border:1px solid var(--warn);border-radius:8px;padding:8px;">
+      &#9888; BENCH TEST ONLY &mdash; device ASLI yang ditiru (controller atau baterai) WAJIB dicabut fisik
+      dari bus SEBELUM mengaktifkan mode ini. Jangan pernah pakai buat memaksa motor tetap jalan saat
+      baterai/BMS asli sedang mengirim sinyal fault (over-voltage/over-current/over-temp) &mdash; itu
+      proteksi asli mencegah kebakaran/ledakan sel lithium, bukan sesuatu yang boleh ditutupi.
+      MID Emulate, Controller Simulator, dan Battery Simulator saling eksklusif (cuma 1 yang boleh aktif),
+      karena ketiganya bisa transmit di ID CAN yang sama.
+    </div>
+    <div id="simBattForm" style="display:none;margin-top:4px;">
+      <div class="votol-note">Battery Simulator &mdash; input manual (test fungsi MID, bukan manipulasi data)</div>
+      <div class="vgrid">
+        <div><label>SOC %</label><input id="inSoc" type="number" value="80" min="0" max="100"></div>
+        <div><label>SOH %</label><input id="inSoh" type="number" value="95" min="0" max="100"></div>
+        <div><label>Suhu Baterai &deg;C</label><input id="inTbat" type="number" value="28"></div>
+        <div><label>Voltase V</label><input id="inVbat" type="number" value="72"></div>
+        <div><label>Arus A</label><input id="inIbat" type="number" value="0"></div>
+        <div><label>Cycle</label><input id="inCycle" type="number" value="50" min="0"></div>
+      </div>
+      <button style="margin-top:8px;width:100%;" onclick="applyBattSim()">APPLY KE FRAME CAN</button>
+    </div>
+    <div id="simCtrlForm" style="display:none;margin-top:4px;">
+      <div class="votol-note">Controller Simulator &mdash; input manual (test fungsi MID, bukan manipulasi data)</div>
+      <div class="vgrid">
+        <div><label>Speed km/h</label><input id="inSpeed" type="number" value="0" step="0.1"></div>
+        <div><label>Throttle %</label><input id="inThrottle" type="number" value="0" min="0" max="100"></div>
+        <div><label>Mode</label><select id="inMode"><option value="0">Eco</option><option value="1">Standard</option><option value="2">Sport</option></select></div>
+        <div><label>Cruise</label><select id="inCruise"><option value="0">OFF</option><option value="1">ON</option></select></div>
+        <div><label>Rem</label><select id="inRem"><option value="0">OFF</option><option value="1">ON</option></select></div>
+        <div><label>Park</label><select id="inPark"><option value="1">PARK</option><option value="0">DRIVE</option></select></div>
+        <div><label>Side Stand</label><select id="inSidestand"><option value="1">TURUN</option><option value="0">NAIK</option></select></div>
+        <div><label>Suhu Inverter &deg;C</label><input id="inTinv" type="number" value="25"></div>
+        <div><label>Suhu Motor &deg;C</label><input id="inTmot" type="number" value="25"></div>
+      </div>
+      <button style="margin-top:8px;width:100%;" onclick="applyCtrlSim()">APPLY KE FRAME CAN</button>
+    </div>
+    <div class="votol-status">
+      <div class="kv"><span>MID heartbeat</span><span id="vMidState">OFF</span></div>
+      <div class="kv"><span>CAN mode</span><span id="vCanMode">-</span></div>
+      <div class="kv"><span>Speed</span><span id="vSpeed">-</span></div>
+      <div class="kv"><span>Write</span><span id="vWrite">LOCKED</span></div>
+      <div class="kv"><span>CAN Voltage</span><span id="vCanV">-</span></div>
+      <div class="kv"><span>CAN Current</span><span id="vCanI">-</span></div>
+      <div class="kv"><span>CAN RPM</span><span id="vCanRpm">-</span></div>
+      <div class="kv"><span>Controller / Motor</span><span id="vCanT">-</span></div>
+      <div class="kv"><span>CAN State</span><span id="vCanState">-</span></div>
+    </div>
+    <div>
+      <div style="font-size:11px;color:var(--dim);margin-bottom:4px;">Last VOTOL reply &mdash; 3 separate CAN frames (0x3FE)</div>
+      <textarea id="vReply" readonly style="width:100%;min-height:70px;background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px;font:12px monospace;"></textarea>
+    </div>
+    <details open>
+      <summary style="color:var(--text);font-size:12px;font-weight:700;">VOTOL PARAMETER PANEL &mdash; PAGE 1 / 2 / 3</summary>
+      <div class="vgrid" style="margin-top:8px;">
+        <label>Model<input id="vpModel" value="EM-100"></label>
+        <label>Battery Voltage (V)<input id="vpBatt" type="number" step="0.1" value="72"></label>
+        <label>Overvoltage (V)<input id="vpOver" type="number" step="0.1" value="89.5"></label>
+        <label>Undervoltage (V)<input id="vpUnder" type="number" step="0.1" value="63"></label>
+        <label>Soft Undervoltage (V)<input id="vpSoft" type="number" step="0.1" value="66"></label>
+        <label>Undervoltage Variation<input id="vpUvVar" type="number" step="0.1" value="1"></label>
+        <label>Busbar Current (A)<input id="vpBus" type="number" step="0.1" value="30"></label>
+        <label>Phase Current<input id="vpPhase" type="number" step="1" value="9600"></label>
+        <label>Throttle Low Protect (V)<input id="vpTl" type="number" step="0.01" value="0.30"></label>
+        <label>Throttle Start (V)<input id="vpTs" type="number" step="0.01" value="1.20"></label>
+        <label>Throttle End (V)<input id="vpTe" type="number" step="0.01" value="4.31"></label>
+        <label>Throttle High Protect (V)<input id="vpTh" type="number" step="0.01" value="4.85"></label>
+        <label>Start Torque<input id="vpSt" type="number" step="1" value="0"></label>
+        <label>Combinative Torque<input id="vpCt" type="number" step="1" value="0"></label>
+        <label>Rate of Rise<input id="vpRise" type="number" step="1" value="50"></label>
+        <label>Rate of Decline<input id="vpDecl" type="number" step="1" value="120"></label>
+        <label>Low Brake<input id="vpLowBrake" value="OFF"></label>
+        <label>3-Speed / Gear<input id="vpGear" value="L/M/H/S"></label>
+        <label>Speed Limit (%)<input id="vpSpeed" type="number" step="1" value="100"></label>
+        <label>Flux Weakening (%)<input id="vpFlux" type="number" step="1" value="0"></label>
+        <label>EBS Ratio (%)<input id="vpEbs" type="number" step="1" value="0"></label>
+        <label>Motor Pole Pairs<input id="vpPole" type="number" step="1" value="0"></label>
+        <label>Hall Shift Angle<input id="vpHall" type="number" step="1" value="0"></label>
+        <label>Motor Type<input id="vpMotorType" value="FOC/PMSM"></label>
+        <label>Motor Temp Start (&deg;C)<input id="vpTempStart" type="number" step="1" value="0"></label>
+        <label>Motor Temp Over (&deg;C)<input id="vpTempOver" type="number" step="1" value="0"></label>
+        <label>Motor Temp Recovery (&deg;C)<input id="vpTempRec" type="number" step="1" value="0"></label>
+        <label>Remote Control<input id="vpRemote" value="OFF"></label>
+        <label>Voltage Calibration<input id="vpVolCal" type="number" step="1" value="0"></label>
+        <label>Current Calibration<input id="vpCurCal" type="number" step="1" value="0"></label>
+        <label>Weak Flux Calibration<input id="vpWeakCal" type="number" step="1" value="0"></label>
+      </div>
+      <div class="btnrow" style="margin-top:8px;">
+        <button class="secondary" onclick="votolSaveProfile()">SAVE PROFILE</button>
+        <button class="secondary" onclick="votolLoadProfile()">LOAD PROFILE</button>
+        <button class="secondary" onclick="votolExportProfile()">EXPORT JSON</button>
+        <button class="secondary" onclick="document.getElementById('vpFile').click()">IMPORT JSON</button>
+        <input id="vpFile" type="file" accept="application/json" style="display:none" onchange="votolImportProfile(event)">
+      </div>
+      <div class="votol-warn">Semua field didokumentasikan dari interface VOTOL. Nilai di panel ini adalah staging/profile; PARAM WRITE controller tidak boleh memakai alamat tebakan. Untuk write nyata, gunakan frame hasil capture/verified untuk model+firmware yang sama.</div>
+    </details>
+    <details open>
+      <summary style="color:var(--text);font-size:12px;font-weight:700;">PORT SETTINGS &mdash; IO / SW / LA / F-U-D</summary>
+      <div class="votol-note">Katalog port dan fungsi yang terdokumentasi. Nomor fungsi berbeda menurut model/harness; jangan menganggap nomor dari model lain sama.</div>
+      <div id="vPortTable" style="overflow:auto"></div>
+      <div class="btnrow" style="margin-top:8px;"><button class="secondary" onclick="votolSavePorts()">SAVE PORT PROFILE</button><button class="secondary" onclick="votolLoadPorts()">LOAD PORT PROFILE</button></div>
+    </details>
+    <details>
+      <summary style="color:var(--text);font-size:12px;">Raw CAN WRITE (advanced)</summary>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px;">
+        <input id="vId" value="3FF" placeholder="CAN ID hex" style="background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px;">
+        <select id="vExt" style="background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px;">
+          <option value="0">Standard 11-bit</option><option value="1">Extended 29-bit</option>
+        </select>
+      </div>
+      <input id="vData" value="09,55,AA,AA,00,AA,00,00" placeholder="AA,BB,CC,DD..." style="width:100%;margin-top:7px;background:#0e1116;color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px;font:12px monospace;">
+      <button style="margin-top:7px;" onclick="votolWrite()">SEND CAN FRAME</button>
+      <div class="votol-warn">Jangan mengirim frame parameter yang belum diverifikasi untuk model/firmware controller Anda.</div>
+    </details>
+  </section>
+<script>
+const VOTOL_PARAM_IDS=['vpModel','vpBatt','vpOver','vpUnder','vpSoft','vpUvVar','vpBus','vpPhase','vpTl','vpTs','vpTe','vpTh','vpSt','vpCt','vpRise','vpDecl','vpLowBrake','vpGear','vpSpeed','vpFlux','vpEbs','vpPole','vpHall','vpMotorType','vpTempStart','vpTempOver','vpTempRec','vpRemote','vpVolCal','vpCurCal','vpWeakCal'];
+const VOTOL_PORTS=['PD0','JTCK','SWD','PA11','PB3','PD1','PA12','PC15','PA0','PB9','PD2','PD3','PC13','PC14','PA8','PB8'];
+const VOTOL_FUNCS=['1:empty_func','2:low_speed_swi','3:middle_speed_swi','4:reverse','5:parking','6:high_speed_sw','7:three_speed_jog','8:one_line','9:hall_speedometer','10:temperature_control','11:one_line_setting','12:brake','13:hall_setting','14:sport','15:cruise','16:lock','17:anti_theft','18:high_brake','19:CANID','20:single_support','21:P_gear','22:stir_up_gear','23:move_third_gear','24:speed_limit','25:reverse_brake','26:display_speed','27:external_temp','28:low_break'];
+function votolBuildPorts(){
+  const t=document.getElementById('vPortTable'); if(!t)return;
+  let h='<table class="vpt"><thead><tr><th>PORT</th><th>MODE</th><th>F/U/D</th><th>FUNCTION</th><th>CODE</th></tr></thead><tbody>';
+  VOTOL_PORTS.forEach((p,i)=>{h+=`<tr><td>${p}</td><td><select id="vpm${i}"><option>IO</option><option>SW</option><option>LA</option></select></td><td><select id="vpf${i}"><option>F</option><option>U</option><option>D</option></select></td><td><select id="vfn${i}">${VOTOL_FUNCS.map(x=>`<option value="${x}">${x}</option>`).join('')}</select></td><td><input id="vcode${i}" value="1" inputmode="numeric"></td></tr>`});
+  h+='</tbody></table>';t.innerHTML=h;
+}
+function votolParamObject(){const o={};VOTOL_PARAM_IDS.forEach(id=>{const e=document.getElementById(id);if(e)o[id]=e.value});return o}
+function votolApplyParamObject(o){VOTOL_PARAM_IDS.forEach(id=>{const e=document.getElementById(id);if(e&&o&&o[id]!==undefined)e.value=o[id]})}
+function votolSaveProfile(){localStorage.setItem('votolParamProfile',JSON.stringify(votolParamObject()));alert('Profil parameter tersimpan di browser.')}
+function votolLoadProfile(){try{votolApplyParamObject(JSON.parse(localStorage.getItem('votolParamProfile')||'{}'));alert('Profil dimuat.')}catch(e){alert('Profil belum ada.')}}
+function votolExportProfile(){const blob=new Blob([JSON.stringify(votolParamObject(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='votol-profile.json';a.click();URL.revokeObjectURL(a.href)}
+function votolImportProfile(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{votolApplyParamObject(JSON.parse(r.result));alert('Profil berhasil diimport.')}catch(e){alert('JSON tidak valid.')}};r.readAsText(f)}
+function votolPortObject(){const a=[];VOTOL_PORTS.forEach((p,i)=>a.push({port:p,mode:document.getElementById('vpm'+i).value,fud:document.getElementById('vpf'+i).value,fn:document.getElementById('vfn'+i).value,code:document.getElementById('vcode'+i).value}));return a}
+function votolSavePorts(){localStorage.setItem('votolPortProfile',JSON.stringify(votolPortObject()));alert('Profil port tersimpan di browser.')}
+function votolLoadPorts(){try{const a=JSON.parse(localStorage.getItem('votolPortProfile')||'[]');a.forEach((x,i)=>{if(!VOTOL_PORTS[i])return;document.getElementById('vpm'+i).value=x.mode||'IO';document.getElementById('vpf'+i).value=x.fud||'F';document.getElementById('vfn'+i).value=x.fn||'1:empty_func';document.getElementById('vcode'+i).value=x.code||'1'});alert('Profil port dimuat.')}catch(e){alert('Profil port belum ada.')}}
+votolBuildPorts();
+async function votolRead(){
+  try{
+    const r=await fetch('/votol/read'); const j=await r.json();
+    if(!j.sent) alert('READ gagal. Pastikan CAN mode NORMAL.');
+    await votolStatus();
+  }catch(e){alert('VOTOL READ error: '+e);}
+}
+async function votolUnlock(){
+  try{
+    const r=await fetch('/votol/unlock'); const j=await r.json();
+    if(!j.ok) alert('Write tetap terkunci: '+j.reason);
+    await votolStatus();
+  }catch(e){alert('Unlock error: '+e);}
+}
+const SIM_MODE_ENDPOINT = {mid:'/mid/on', off:'/mid/off', controller:'/sim?set=controller', battery:'/sim?set=battery'};
+function reflectSimMode(opMode){
+  const map = {0:'off', 1:'mid', 2:'controller', 3:'battery'};
+  const active = map[opMode] ?? 'off';
+  document.getElementById('vMidState').textContent = active === 'mid' ? 'ON' : 'OFF';
+  document.getElementById('btnMidOn').classList.toggle('active', active==='mid');
+  document.getElementById('btnSimController').classList.toggle('active', active==='controller');
+  document.getElementById('btnSimBattery').classList.toggle('active', active==='battery');
+  document.getElementById('simWarn').style.display = (active==='controller'||active==='battery') ? 'block' : 'none';
+  document.getElementById('simBattForm').style.display = active==='battery' ? 'block' : 'none';
+  document.getElementById('simCtrlForm').style.display = active==='controller' ? 'block' : 'none';
+}
+async function setSimMode(mode){
+  try{
+    const r=await fetch(SIM_MODE_ENDPOINT[mode]); const j=await r.json();
+    reflectSimMode(j.opMode ?? (j.midEmulate ? 1 : 0));
+  }catch(e){alert('Sim mode toggle error: '+e);}
+}
+function val(id){ return document.getElementById(id).value; }
+async function applyBattSim(){
+  const q = `soc=${val('inSoc')}&soh=${val('inSoh')}&tbat=${val('inTbat')}&vbat=${val('inVbat')}&ibat=${val('inIbat')}&cycle=${val('inCycle')}`;
+  try{ await fetch('/sim/battery/set?'+q); }catch(e){alert('Apply error: '+e);}
+}
+async function applyCtrlSim(){
+  const q = `speed=${val('inSpeed')}&throttle=${val('inThrottle')}&mode=${val('inMode')}&cruise=${val('inCruise')}&rem=${val('inRem')}&park=${val('inPark')}&sidestand=${val('inSidestand')}&tinv=${val('inTinv')}&tmot=${val('inTmot')}`;
+  try{ await fetch('/sim/controller/set?'+q); }catch(e){alert('Apply error: '+e);}
+}
+async function votolStatus(){
+  try{
+    const r=await fetch('/votol/status'); const j=await r.json();
+    document.getElementById('vCanMode').textContent=j.listenOnly?'LISTEN ONLY':'NORMAL';
+    reflectSimMode(j.opMode ?? (j.midEmulate ? 1 : 0));
+    document.getElementById('vSpeed').textContent=(j.speed??-1)+' km/h';
+    document.getElementById('vWrite').textContent=j.writeUnlocked?'UNLOCKED':'LOCKED';
+    document.getElementById('vReply').value=(j.frames||[]).map((x,i)=>'0x3FE #'+(i+1)+'  '+x).join('\n') || j.replyHex || '';
+    document.getElementById('vCanV').textContent=j.canLiveValid?(j.voltage+' V'):'-';
+    document.getElementById('vCanI').textContent=j.canLiveValid?(j.current+' A'):'-';
+    document.getElementById('vCanRpm').textContent=j.canLiveValid?j.rpm:'-';
+    document.getElementById('vCanT').textContent=j.canLiveValid?(j.controllerTemp+' \u00B0C / '+j.motorTemp+' \u00B0C'):'-';
+    document.getElementById('vCanState').textContent=j.canLiveValid?('0x'+Number(j.state).toString(16).padStart(2,'0')):'-';
+  }catch(e){}
+}
+async function votolWrite(){
+  if(!confirm('Kirim RAW CAN ke VOTOL? Pastikan frame sudah diverifikasi untuk controller Anda dan motor benar-benar berhenti.')) return;
+  const id=encodeURIComponent(document.getElementById('vId').value.trim());
+  const ext=document.getElementById('vExt').value;
+  const data=document.getElementById('vData').value.trim().replace(/ /g,'');
+  try{
+    const r=await fetch('/votol/write?id='+id+'&ext='+ext+'&data='+data);
+    const j=await r.json();
+    if(!j.ok) alert('WRITE ditolak/gagal: '+(j.reason||'invalid frame'));
+    else alert('CAN frame terkirim.');
+    await votolStatus();
+  }catch(e){alert('VOTOL WRITE error: '+e);}
+}
+setInterval(votolStatus,1000);
+votolStatus();
+</script>
+</body>
+</html>
+)rawliteral";
+
+// ================= CAN TOOL (v6) =================
+// Halaman web http://192.168.4.1/cantool : ganti bitrate (disimpan di NVS),
+// ganti mode LISTEN/NORMAL, monitor RX per-ID, kirim frame manual / berulang,
+// dan auto-detect bitrate (pasif, LISTEN_ONLY). Tidak mengubah fitur lama.
+void reinitTWAI(bool listenOnly);
+
+uint32_t canBaud = 250000;
+Preferences canPrefs;
+
+#define CT_CASE(B, M) case B: { twai_timing_config_t x = M; t = x; return true; }
+bool canTimingFor(uint32_t baud, twai_timing_config_t &t) {
+  switch (baud) {
+    CT_CASE(50000,   TWAI_TIMING_CONFIG_50KBITS())
+    CT_CASE(100000,  TWAI_TIMING_CONFIG_100KBITS())
+    CT_CASE(125000,  TWAI_TIMING_CONFIG_125KBITS())
+    CT_CASE(250000,  TWAI_TIMING_CONFIG_250KBITS())
+    CT_CASE(500000,  TWAI_TIMING_CONFIG_500KBITS())
+    CT_CASE(800000,  TWAI_TIMING_CONFIG_800KBITS())
+    CT_CASE(1000000, TWAI_TIMING_CONFIG_1MBITS())
+    default: return false;
+  }
+}
+
+// ---- ring buffer RX/TX untuk monitor web ----
+#define CT_RING 128
+uint32_t ctId[CT_RING];
+uint32_t ctTime[CT_RING];
+uint8_t  ctFlags[CT_RING];      // bit0 ext, bit1 rtr, bit2 = frame TX (dari kita)
+uint8_t  ctDlc[CT_RING];
+uint8_t  ctData[CT_RING][8];
+uint32_t ctSeq = 0;             // nomor urut frame (naik terus)
+uint32_t ctFirst = 0;           // frame < ctFirst dianggap sudah di-clear
+uint32_t ctRxSinceSwitch = 0;   // dipakai auto-detect
+bool     ctFilterOn = false;
+uint32_t ctFilterId = 0;
+uint32_t ctTxOk = 0, ctTxFail = 0;
+
+void ctPush(const twai_message_t &m, bool isTx) {
+  if (ctFilterOn && m.identifier != ctFilterId) return;
+  uint8_t i = ctSeq % CT_RING;
+  ctId[i] = m.identifier;
+  ctTime[i] = millis();
+  ctFlags[i] = (m.extd ? 1 : 0) | (m.rtr ? 2 : 0) | (isTx ? 4 : 0);
+  uint8_t n = m.data_length_code > 8 ? 8 : m.data_length_code;
+  ctDlc[i] = n;
+  memset(ctData[i], 0, 8);
+  if (!m.rtr) memcpy(ctData[i], m.data, n);
+  ctSeq++;
+}
+
+// ---- RTR scan (baca saja: kirim RTR ke rentang ID, catat ID yang membalas) ----
+#define CT_SCAN_MAX 256
+bool     scRun = false, scExt = true;
+uint32_t scStart = 0, scEnd = 0, scCur = 0, scLastSend = 0, scGapMs = 60, scWinEnd = 0, scSent = 0;
+uint8_t  scDlc = 0;
+uint16_t scRepl[CT_SCAN_MAX], scOther[CT_SCAN_MAX];
+uint8_t  scLen[CT_SCAN_MAX];
+uint8_t  scData[CT_SCAN_MAX][8];
+
+void canToolLogRx(const twai_message_t &m) {
+  ctRxSinceSwitch++;
+  ctPush(m, false);
+  if (!m.rtr && (scRun || scSent) && (bool)m.extd == scExt &&
+      m.identifier >= scStart && m.identifier <= scEnd) {
+    uint32_t ix = m.identifier - scStart;
+    if (scRun && m.identifier == scCur - 1 && millis() < scWinEnd) { if (scRepl[ix] < 65535) scRepl[ix]++; }
+    else { if (scOther[ix] < 65535) scOther[ix]++; }
+    uint8_t n = m.data_length_code > 8 ? 8 : m.data_length_code;
+    scLen[ix] = n;
+    memcpy(scData[ix], m.data, n);
+  }
+}
+
+// ---- TX ----
+bool ctRepOn = false, ctRepExt = true, ctRepRtr = false;
+uint32_t ctRepId = 0, ctRepMs = 1000, ctRepLast = 0, ctRepSent = 0;
+uint8_t ctRepLen = 0;
+uint8_t ctRepData[8];
+
+bool ctSend(uint32_t id, bool ext, bool rtr, const uint8_t *d, uint8_t len) {
+  if (listenOnlyMode) return false;
+  if (len > 8) return false;
+  if (ext ? (id > 0x1FFFFFFFUL) : (id > 0x7FFUL)) return false;
+  twai_message_t m = {};
+  m.identifier = id;
+  m.extd = ext ? 1 : 0;
+  m.rtr = rtr ? 1 : 0;
+  m.data_length_code = len;
+  if (!rtr && len) memcpy(m.data, d, len);
+  esp_err_t e = twai_transmit(&m, pdMS_TO_TICKS(50));
+  if (e == ESP_OK) { ctTxOk++; ctPush(m, true); return true; }
+  ctTxFail++;
+  return false;
+}
+
+uint8_t ctParseHex(const String &s, uint8_t *out) {
+  uint8_t n = 0;
+  int hi = -1;
+  for (unsigned i = 0; i < s.length() && n < 8; i++) {
+    char c = s[i];
+    int v;
+    if (c >= '0' && c <= '9') v = c - '0';
+    else if (c >= 'a' && c <= 'f') v = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') v = c - 'A' + 10;
+    else continue;
+    if (hi < 0) hi = v; else { out[n++] = (uint8_t)((hi << 4) | v); hi = -1; }
+  }
+  return n;
+}
+
+// ---- auto-detect bitrate (pasif) ----
+#define CT_NRATES 7
+const uint32_t CT_RATES[CT_NRATES] = {1000000, 800000, 500000, 250000, 125000, 100000, 50000};
+bool     abRunning = false;
+int8_t   abIdx = 0;
+uint32_t abStartMs = 0, abPrevBaud = 250000, abBest = 0;
+uint32_t abFrames[CT_NRATES], abErrs[CT_NRATES];
+
+void autoBaudStart() {
+  abRunning = true;
+  abIdx = 0;
+  abBest = 0;
+  abPrevBaud = canBaud;
+  memset(abFrames, 0, sizeof(abFrames));
+  memset(abErrs, 0, sizeof(abErrs));
+  ctRepOn = false;
+  canBaud = CT_RATES[0];
+  reinitTWAI(true);
+  ctRxSinceSwitch = 0;
+  abStartMs = millis();
+}
+
+void autoBaudService() {
+  if (!abRunning) return;
+  if (millis() - abStartMs < 1500) return;
+  twai_status_info_t si;
+  uint32_t berr = 0;
+  if (twai_get_status_info(&si) == ESP_OK) berr = si.bus_error_count;
+  abFrames[abIdx] = ctRxSinceSwitch;
+  abErrs[abIdx] = berr;
+  abIdx++;
+  if (abIdx >= CT_NRATES) {
+    int best = -1;
+    for (int i = 0; i < CT_NRATES; i++) {
+      if (abFrames[i] == 0) continue;
+      if (best < 0 || abErrs[i] < abErrs[best] ||
+          (abErrs[i] == abErrs[best] && abFrames[i] > abFrames[best])) best = i;
+    }
+    if (best >= 0) {
+      abBest = CT_RATES[best];
+      canBaud = abBest;
+      canPrefs.begin("cantool", false);
+      canPrefs.putUInt("baud", canBaud);
+      canPrefs.end();
+    } else {
+      canBaud = abPrevBaud;
+    }
+    reinitTWAI(true);
+    abRunning = false;
+    return;
+  }
+  canBaud = CT_RATES[abIdx];
+  reinitTWAI(true);
+  ctRxSinceSwitch = 0;
+  abStartMs = millis();
+}
+
+void scanService() {
+  if (!scRun) return;
+  if (listenOnlyMode || abRunning) { scRun = false; return; }
+  uint32_t now = millis();
+  if (now - scLastSend < scGapMs) return;
+  if (scCur > scEnd) { scRun = false; return; }  // jeda terakhir sudah lewat
+  twai_message_t m = {};
+  m.identifier = scCur;
+  m.extd = scExt ? 1 : 0;
+  m.rtr = 1;
+  m.data_length_code = scDlc;
+  if (twai_transmit(&m, pdMS_TO_TICKS(20)) == ESP_OK) ctTxOk++; else ctTxFail++;
+  scSent++;
+  scLastSend = now;
+  scWinEnd = now + scGapMs;
+  scCur++;
+}
+
+String scanJson() {
+  String j = String("{\"run\":") + (scRun ? "true" : "false");
+  j += ",\"from\":\"" + String(scStart, HEX) + "\",\"to\":\"" + String(scEnd, HEX) + "\"";
+  j += ",\"cur\":\"" + String(scCur, HEX) + "\",\"sent\":" + String(scSent) + ",\"hits\":[";
+  bool first = true;
+  if (scEnd >= scStart) {
+    for (uint32_t ix = 0; ix <= scEnd - scStart && ix < CT_SCAN_MAX; ix++) {
+      if (!scRepl[ix] && !scOther[ix]) continue;
+      if (!first) j += ",";
+      first = false;
+      j += "[\"" + String(scStart + ix, HEX) + "\"," + String(scRepl[ix]) + "," + String(scOther[ix]) +
+           "," + String(scLen[ix]) + ",\"" + bytesToHex(scData[ix], scLen[ix]) + "\"]";
+    }
+  }
+  j += "]}";
+  return j;
+}
+
+// Dipanggil tiap loop(): TX berulang, auto-detect, pemulihan bus-off.
+void canToolService() {
+  autoBaudService();
+  scanService();
+  uint32_t now = millis();
+  if (ctRepOn && !listenOnlyMode && !abRunning && now - ctRepLast >= ctRepMs) {
+    ctRepLast = now;
+    if (ctSend(ctRepId, ctRepExt, ctRepRtr, ctRepData, ctRepLen)) ctRepSent++;
+  }
+  static uint32_t lastChk = 0;
+  if (now - lastChk > 1000) {
+    lastChk = now;
+    twai_status_info_t si;
+    if (!abRunning && twai_get_status_info(&si) == ESP_OK && si.state == TWAI_STATE_BUS_OFF) {
+      Serial.println("CANTOOL: BUS_OFF -> reinit");
+      reinitTWAI(listenOnlyMode);
+    }
+  }
+}
+
+const char *ctResetReason() {
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  return "POWERON";
+    case ESP_RST_SW:       return "SW_RESTART";
+    case ESP_RST_PANIC:    return "PANIC (crash)";
+    case ESP_RST_INT_WDT:  return "INT_WDT";
+    case ESP_RST_TASK_WDT: return "TASK_WDT";
+    case ESP_RST_WDT:      return "WDT";
+    case ESP_RST_BROWNOUT: return "BROWNOUT (tegangan drop)";
+    case ESP_RST_DEEPSLEEP:return "DEEPSLEEP";
+    default:               return "LAIN";
+  }
+}
+
+String ctStatusJson() {
+  twai_status_info_t si;
+  bool ok = (twai_get_status_info(&si) == ESP_OK);
+  const char *st = "?";
+  if (ok) {
+    switch (si.state) {
+      case TWAI_STATE_STOPPED: st = "STOPPED"; break;
+      case TWAI_STATE_RUNNING: st = "RUNNING"; break;
+      case TWAI_STATE_BUS_OFF: st = "BUS_OFF"; break;
+      case TWAI_STATE_RECOVERING: st = "RECOVERING"; break;
+      default: break;
+    }
+  }
+  String j = "{\"baud\":" + String(canBaud);
+  j += String(",\"listen\":") + (listenOnlyMode ? "true" : "false");
+  j += String(",\"state\":\"") + st + "\"";
+  if (ok) {
+    j += ",\"tec\":" + String(si.tx_error_counter);
+    j += ",\"rec\":" + String(si.rx_error_counter);
+    j += ",\"berr\":" + String(si.bus_error_count);
+    j += ",\"miss\":" + String(si.rx_missed_count);
+  }
+  j += ",\"seq\":" + String(ctSeq);
+  j += String(",\"rst\":\"") + ctResetReason() + "\",\"heap\":" + String((uint32_t)ESP.getFreeHeap()) + ",\"minheap\":" + String((uint32_t)ESP.getMinFreeHeap());
+  j += ",\"txok\":" + String(ctTxOk) + ",\"txfail\":" + String(ctTxFail);
+  j += String(",\"rep\":") + (ctRepOn ? "true" : "false") + ",\"repsent\":" + String(ctRepSent);
+  j += String(",\"ab\":{\"run\":") + (abRunning ? "true" : "false");
+  j += ",\"idx\":" + String((int)abIdx) + ",\"best\":" + String(abBest) + ",\"res\":[";
+  for (int i = 0; i < CT_NRATES; i++) {
+    if (i) j += ",";
+    j += "[" + String(CT_RATES[i]) + "," + String(abFrames[i]) + "," + String(abErrs[i]) + "]";
+  }
+  j += "]}}";
+  return j;
+}
+
+String ctRxJson(uint32_t since) {
+  uint32_t start = since;
+  uint32_t floorSeq = (ctSeq > CT_RING) ? (ctSeq - CT_RING) : 0;
+  if (start > ctSeq || start < floorSeq) start = floorSeq;
+  if (start < ctFirst) start = ctFirst;
+  String s;
+  s.reserve(64 + (ctSeq - start) * 52);
+  s = "{\"seq\":" + String(ctSeq) + ",\"f\":[";
+  for (uint32_t q = start; q < ctSeq; q++) {
+    uint8_t i = q % CT_RING;
+    if (q != start) s += ",";
+    s += "[" + String(ctTime[i]) + ",\"" + String(ctId[i], HEX) + "\"," + String(ctFlags[i]) +
+         "," + String(ctDlc[i]) + ",\"" + bytesToHex(ctData[i], ctDlc[i]) + "\"]";
+  }
+  s += "]}";
+  return s;
+}
+
+const char CANTOOL_HTML[] PROGMEM = R"CTHTML(<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CAN Tool</title>
+<style>
+:root{--bg:#0e1116;--c:#171c24;--t:#e6edf3;--m:#8b98a8;--a:#2ea043;--w:#d29922;--e:#f85149;--b:#30363d}
+*{box-sizing:border-box}body{margin:0;padding:12px;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif}
+.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}
+h2{margin:0 0 8px;font-size:15px}label{color:var(--m);font-size:12px;display:block;margin:6px 0 2px}
+input,select,button{font:inherit;color:var(--t);background:#0b0f14;border:1px solid var(--b);border-radius:8px;padding:8px}
+input[type=text],select{width:100%}button{background:#21262d;cursor:pointer}button.p{background:var(--a);border-color:var(--a);color:#fff}
+button.d{background:var(--e);border-color:var(--e)}.r{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.r>*{flex:1;min-width:90px}
+.k{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--b)}.k span:first-child{color:var(--m)}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#21262d}.ok{color:var(--a)}.wr{color:var(--w)}.er{color:var(--e)}
+table{width:100%;border-collapse:collapse;font:12px ui-monospace,monospace}td,th{padding:4px 6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}
+.sc{overflow-x:auto;max-height:340px;overflow-y:auto}.tx{color:var(--w)}a{color:#58a6ff}
+</style></head><body>
+<a href="/">&larr; Dashboard</a>
+<div class="card"><h2>Status &amp; Konfigurasi</h2>
+<div class="k"><span>Bitrate aktif</span><b id="sBaud">-</b></div>
+<div class="k"><span>Mode</span><b id="sMode">-</b></div>
+<div class="k"><span>Bus state</span><b id="sState">-</b></div>
+<div class="k"><span>TEC / REC / bus err / missed</span><b id="sErr">-</b></div>
+<div class="k"><span>TX ok / gagal</span><b id="sTx">-</b></div>
+<div class="k"><span>Reset terakhir</span><b id="sRst">-</b></div>
+<div class="k"><span>Heap bebas / terendah</span><b id="sHeap">-</b></div>
+<div class="r"><div><label>Bitrate</label><select id="baud">
+<option value="1000000">1 Mbps</option><option value="800000">800 kbps</option><option value="500000">500 kbps</option>
+<option value="250000">250 kbps</option><option value="125000">125 kbps</option><option value="100000">100 kbps</option><option value="50000">50 kbps</option></select></div>
+<div><label>Mode</label><select id="mode"><option value="listen">LISTEN (pasif)</option><option value="normal">NORMAL (ACK + bisa TX)</option></select></div></div>
+<div class="r" style="margin-top:8px"><button class="p" onclick="apply()">Terapkan</button><button onclick="autod()">Auto-detect bitrate</button></div>
+<div id="ab" style="margin-top:8px;color:var(--m);font-size:12px"></div>
+<div style="color:var(--m);font-size:12px;margin-top:6px">Bitrate tersimpan di memori ESP32 (tetap setelah reboot). Mode selalu mulai LISTEN setelah boot. Auto-detect bersifat pasif dan butuh ada trafik di bus (mis. heartbeat/tool PC aktif).</div></div>
+
+<div class="card"><h2>Monitor RX/TX</h2>
+<div class="r"><div><label>Filter ID (hex, kosong = semua)</label><input type="text" id="fid" placeholder="mis. 544"></div>
+<button onclick="setF()">Set filter</button><button id="bv" onclick="tv()">Mode: per-ID</button></div>
+<div class="r" style="margin:8px 0"><button onclick="pz()" id="bp">Pause</button><button onclick="clr()">Clear</button><button onclick="csv()">CSV</button></div>
+<div class="sc"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div></div>
+
+<div class="card"><h2>Kirim Frame</h2>
+<div class="r"><div><label>ID (hex)</label><input type="text" id="tid" placeholder="544"></div>
+<div><label>Data (hex, maks 8 byte)</label><input type="text" id="tdt" placeholder="01 02 03"></div></div>
+<div class="r" style="margin-top:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="text" checked> Extended 29-bit</label>
+<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="trtr"> RTR</label>
+<div><label>DLC (utk RTR)</label><input type="text" id="tdlc" value="0"></div>
+<div><label>Interval (ms)</label><input type="text" id="tms" value="1000"></div></div>
+<div class="r" style="margin-top:8px"><button class="p" onclick="send(0)">Kirim 1x</button><button onclick="send(1)">Ulangi</button><button class="d" onclick="stopRep()">Stop</button></div>
+<div id="tm" style="margin-top:6px;font-size:12px;color:var(--m)"></div>
+<div style="color:var(--w);font-size:12px;margin-top:6px">Hanya kirim perintah BACA. Frame tulis/kalibrasi ke BMS/kontroler bisa mengubah atau merusak data. TX butuh mode NORMAL dan bitrate yang benar.</div></div>
+
+<div class="card"><h2>RTR Scan (cari ID yang membalas)</h2>
+<div class="r"><div><label>Dari ID (hex)</label><input type="text" id="sf" value="10261200"></div>
+<div><label>Sampai ID (hex)</label><input type="text" id="sto" value="1026123F"></div></div>
+<div class="r" style="margin-top:6px"><div><label>Jeda per ID (ms)</label><input type="text" id="sg" value="60"></div>
+<div><label>DLC RTR</label><input type="text" id="sd" value="0"></div>
+<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sx" checked> Extended</label></div>
+<div class="r" style="margin-top:8px"><button class="p" onclick="scanGo()">Mulai scan</button><button class="d" onclick="scanStop()">Stop</button></div>
+<div id="sm" style="margin-top:6px;font-size:12px;color:var(--m)"></div>
+<div class="sc"><table><thead><tr><th>ID</th><th>balas</th><th>lain</th><th>Data terakhir</th></tr></thead><tbody id="stb"></tbody></table></div>
+<div style="color:var(--m);font-size:12px;margin-top:6px">Maks 256 ID per scan, hanya RTR (baca). Butuh mode NORMAL dan heartbeat MID aktif agar BMS bangun. "balas" = frame data datang dalam jeda setelah RTR ke ID itu (respons langsung). "lain" = frame ID itu yang datang di luar jendela (siaran berkala). Dua-duanya menandakan ID itu hidup.</div></div>
+
+<script>
+const $=i=>document.getElementById(i);let since=0,rows=[],paused=false,view='id',mapId={};
+async function J(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
+function fb(b){return b>=1e6?(b/1e6)+' Mbps':(b/1e3)+' kbps'}
+let b1=0,b2=0;async function st(){if(b1||document.hidden)return;b1=1;try{const s=await J('/can/status');
+$('sBaud').textContent=fb(s.baud);$('sMode').innerHTML=s.listen?'<span class="tag wr">LISTEN</span>':'<span class="tag ok">NORMAL</span>';
+$('sState').innerHTML='<span class="'+(s.state=='RUNNING'?'ok':'er')+'">'+s.state+'</span>';
+$('sErr').textContent=s.tec+' / '+s.rec+' / '+s.berr+' / '+s.miss;$('sRst').textContent=s.rst;$('sHeap').textContent=s.heap+' / '+s.minheap;$('sTx').textContent=s.txok+' / '+s.txfail+(s.rep?' (ulang: '+s.repsent+')':'');
+if(document.activeElement!==$('baud'))$('baud').value=s.baud;if(document.activeElement!==$('mode'))$('mode').value=s.listen?'listen':'normal';
+let a=s.ab,h='';if(a.run)h='Auto-detect berjalan... '+(a.idx+1)+'/'+a.res.length+' ('+fb(a.res[Math.min(a.idx,a.res.length-1)][0])+')';
+else if(a.res.some(x=>x[1]>0||x[2]>0)||a.best){h=(a.best?'<b class="ok">Terdeteksi: '+fb(a.best)+'</b><br>':'<b class="er">Tidak ada frame valid di semua bitrate.</b><br>')+a.res.map(x=>fb(x[0])+': '+x[1]+' frame, '+x[2]+' err').join('<br>')}
+$('ab').innerHTML=h;}catch(e){}b1=0;}
+async function apply(){await J('/can/cfg?baud='+$('baud').value+'&mode='+$('mode').value);since=0;rows=[];mapId={};st();}
+async function autod(){if(confirm('Auto-detect ~11 detik, mode jadi LISTEN dan TX berulang berhenti. Lanjut?')){await J('/can/autodetect');st();}}
+async function setF(){await J('/can/filter?id='+encodeURIComponent($('fid').value.trim()));since=0;rows=[];mapId={};}
+async function clr(){await J('/can/clear');rows=[];mapId={};draw();}
+function pz(){paused=!paused;$('bp').textContent=paused?'Resume':'Pause'}
+function tv(){view=view=='id'?'raw':'id';$('bv').textContent='Mode: '+(view=='id'?'per-ID':'stream');draw();}
+function hx(s){return s.replace(/(..)/g,'$1 ').trim()}
+async function rx(){if(paused||b2||document.hidden)return;b2=1;try{const d=await J('/can/rx?since='+since);if(d.seq<since){since=0;rows=[];mapId={};}since=d.seq;
+for(const f of d.f){const o={t:f[0],id:f[1].toUpperCase(),ext:f[2]&1,rtr:(f[2]>>1)&1,tx:(f[2]>>2)&1,dlc:f[3],d:hx(f[4])};rows.push(o);
+const k=o.id+(o.tx?'T':'');const m=mapId[k]||(mapId[k]={n:0,p:0,last:0});m.p=m.last?o.t-m.last:0;m.last=o.t;m.n++;m.o=o;}
+if(rows.length>600)rows=rows.slice(-600);draw();}catch(e){}b2=0;}
+function draw(){const tb=$('tb'),th=$('th');
+if(view=='id'){th.innerHTML='<tr><th>ID</th><th>n</th><th>per(ms)</th><th>DLC</th><th>Data</th></tr>';
+tb.innerHTML=Object.keys(mapId).sort().map(k=>{const m=mapId[k],o=m.o;return '<tr class="'+(o.tx?'tx':'')+'"><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+m.n+'</td><td>'+m.p+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>'}).join('');}
+else{th.innerHTML='<tr><th>ms</th><th>ID</th><th>DLC</th><th>Data</th></tr>';
+tb.innerHTML=rows.slice(-120).reverse().map(o=>'<tr class="'+(o.tx?'tx':'')+'"><td>'+o.t+'</td><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>').join('');}}
+function csv(){let c='ms,id,ext,rtr,tx,dlc,data\n'+rows.map(o=>[o.t,o.id,o.ext,o.rtr,o.tx,o.dlc,o.d].join(',')).join('\n');
+const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='can_log.csv';a.click();}
+async function send(rep){const id=$('tid').value.trim();if(!id){$('tm').textContent='ID kosong';return;}
+if(!confirm('Kirim frame ke bus: ID '+id+'?'))return;
+const u='/can/tx?id='+encodeURIComponent(id)+'&ext='+($('text').checked?1:0)+'&rtr='+($('trtr').checked?1:0)+'&dlc='+encodeURIComponent($('tdlc').value)+'&data='+encodeURIComponent($('tdt').value)+(rep?'&rep=1&ms='+encodeURIComponent($('tms').value):'');
+const r=await J(u);$('tm').innerHTML=r.ok?'<span class="ok">OK</span>':'<span class="er">'+(r.err||'gagal')+'</span>';st();}
+async function stopRep(){await J('/can/txstop');st();}
+let sc1=0;async function scanPoll(){if(sc1)return;sc1=1;try{const r=await J('/can/scanres');
+$('sm').innerHTML=(r.run?'Scan berjalan... ID '+r.cur.toUpperCase()+' ('+r.sent+' terkirim)':'Selesai. '+r.sent+' RTR terkirim, '+r.hits.length+' ID hidup.');
+$('stb').innerHTML=r.hits.map(h=>'<tr><td>'+h[0].toUpperCase()+'</td><td>'+h[1]+'</td><td>'+h[2]+'</td><td>'+hx(h[4])+'</td></tr>').join('');
+if(r.run)setTimeout(scanPoll,1000);}catch(e){}sc1=0;}
+async function scanGo(){if(!confirm('Kirim RTR (hanya baca) ke rentang ID ini?'))return;
+const r=await J('/can/scan?from='+encodeURIComponent($('sf').value.trim())+'&to='+encodeURIComponent($('sto').value.trim())+'&ext='+($('sx').checked?1:0)+'&gap='+encodeURIComponent($('sg').value)+'&dlc='+encodeURIComponent($('sd').value));
+if(r.ok===false){$('sm').innerHTML='<span class="er">'+r.err+'</span>';return;}scanPoll();}
+async function scanStop(){await J('/can/scanstop');scanPoll();}
+setInterval(st,2000);setInterval(rx,800);st();rx();draw();
+</script></body></html>)CTHTML";
+
+void ctReply(WiFiClient &c, const String &body) {
+  c.println("HTTP/1.1 200 OK");
+  c.println("Content-Type: application/json");
+  c.println("Cache-Control: no-store");
+  c.println("Connection: close");
+  c.println();
+  c.print(body);
+  c.stop();
+}
+
+// Return true kalau request ini milik CAN tool (sudah dibalas).
+bool handleCanTool(WiFiClient &client, const String &reqLine) {
+  if (reqLine.indexOf("GET /cantool") >= 0) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html; charset=utf-8");
+    client.println("Connection: close");
+    client.println();
+    client.print(CANTOOL_HTML);
+    delay(2);
+    client.stop();
+    return true;
+  }
+  if (reqLine.indexOf("GET /can/") < 0) return false;
+  String q = extractQuery(reqLine);
+
+  if (reqLine.indexOf("GET /can/status") >= 0) { ctReply(client, ctStatusJson()); return true; }
+
+  if (reqLine.indexOf("GET /can/rx") >= 0) {
+    uint32_t since = (uint32_t)getQueryParamInt(q, "since", 0);
+    ctReply(client, ctRxJson(since));
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/cfg") >= 0) {
+    if (abRunning) { ctReply(client, "{\"ok\":false,\"err\":\"autodetect berjalan\"}"); return true; }
+    String sb, sm;
+    uint32_t nb = canBaud;
+    bool nl = listenOnlyMode;
+    if (getQueryParamStr(q, "baud", sb)) nb = (uint32_t)sb.toInt();
+    if (getQueryParamStr(q, "mode", sm)) nl = !(sm == "normal");
+    twai_timing_config_t tmp;
+    if (!canTimingFor(nb, tmp)) { ctReply(client, "{\"ok\":false,\"err\":\"bitrate tidak didukung\"}"); return true; }
+    if (nb != canBaud) {
+      canBaud = nb;
+      canPrefs.begin("cantool", false);
+      canPrefs.putUInt("baud", canBaud);
+      canPrefs.end();
+    }
+    ctRepOn = false;           // TX berulang selalu berhenti saat konfigurasi berubah
+    scRun = false;
+    reinitTWAI(nl);
+    ctReply(client, ctStatusJson());
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/filter") >= 0) {
+    String sid;
+    ctFilterOn = false;
+    if (getQueryParamStr(q, "id", sid) && sid.length() > 0) {
+      ctFilterId = strtoul(sid.c_str(), nullptr, 16);
+      ctFilterOn = true;
+    }
+    ctFirst = ctSeq;
+    ctReply(client, ctStatusJson());
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/clear") >= 0) {
+    ctFirst = ctSeq;
+    ctReply(client, ctStatusJson());
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/autodetect") >= 0) {
+    if (!abRunning) autoBaudStart();
+    ctReply(client, ctStatusJson());
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/scanstop") >= 0) { scRun = false; ctReply(client, scanJson()); return true; }
+  if (reqLine.indexOf("GET /can/scanres") >= 0) { ctReply(client, scanJson()); return true; }
+  if (reqLine.indexOf("GET /can/scan?") >= 0) {
+    if (abRunning) { ctReply(client, "{\"ok\":false,\"err\":\"autodetect berjalan\"}"); return true; }
+    if (listenOnlyMode) { ctReply(client, "{\"ok\":false,\"err\":\"pindah ke mode NORMAL dulu\"}"); return true; }
+    String sf, st2, sg;
+    if (!getQueryParamStr(q, "from", sf) || !getQueryParamStr(q, "to", st2) || sf.length() == 0 || st2.length() == 0) {
+      ctReply(client, "{\"ok\":false,\"err\":\"from/to kosong\"}"); return true;
+    }
+    uint32_t a = strtoul(sf.c_str(), nullptr, 16), b = strtoul(st2.c_str(), nullptr, 16);
+    bool ext = getQueryParamInt(q, "ext", 1) != 0;
+    if (b < a || b - a >= CT_SCAN_MAX) { ctReply(client, "{\"ok\":false,\"err\":\"rentang maks 256 ID, to >= from\"}"); return true; }
+    if (ext ? (b > 0x1FFFFFFFUL) : (b > 0x7FFUL)) { ctReply(client, "{\"ok\":false,\"err\":\"ID di luar batas\"}"); return true; }
+    uint32_t gap = (uint32_t)getQueryParamInt(q, "gap", 60);
+    if (gap < 20) gap = 20;
+    if (gap > 2000) gap = 2000;
+    ctRepOn = false;
+    memset(scRepl, 0, sizeof(scRepl)); memset(scOther, 0, sizeof(scOther));
+    memset(scLen, 0, sizeof(scLen));   memset(scData, 0, sizeof(scData));
+    scStart = a; scEnd = b; scCur = a; scExt = ext; scGapMs = gap;
+    scDlc = (uint8_t)(getQueryParamInt(q, "dlc", 0) & 0x0F);
+    if (scDlc > 8) scDlc = 8;
+    scSent = 0; scLastSend = 0; scWinEnd = 0; scRun = true;
+    ctReply(client, scanJson());
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/tx?") >= 0) {
+    if (abRunning) { ctReply(client, "{\"ok\":false,\"err\":\"autodetect berjalan\"}"); return true; }
+    if (listenOnlyMode) { ctReply(client, "{\"ok\":false,\"err\":\"mode masih LISTEN, pindah ke NORMAL dulu\"}"); return true; }
+    String sid, sd, sms;
+    if (!getQueryParamStr(q, "id", sid) || sid.length() == 0) { ctReply(client, "{\"ok\":false,\"err\":\"ID kosong\"}"); return true; }
+    uint32_t id = strtoul(sid.c_str(), nullptr, 16);
+    bool ext = getQueryParamInt(q, "ext", 1) != 0;
+    bool rtr = getQueryParamInt(q, "rtr", 0) != 0;
+    uint8_t d[8] = {0};
+    uint8_t len = 0;
+    if (getQueryParamStr(q, "data", sd)) len = ctParseHex(sd, d);
+    if (rtr) len = (uint8_t)getQueryParamInt(q, "dlc", 0) & 0x0F;
+    if (len > 8) len = 8;
+    bool rep = getQueryParamInt(q, "rep", 0) != 0;
+    if (rep) {
+      uint32_t ms = (uint32_t)getQueryParamInt(q, "ms", 1000);
+      if (ms < 20) ms = 20;
+      ctRepId = id; ctRepExt = ext; ctRepRtr = rtr; ctRepLen = len; ctRepMs = ms;
+      memcpy(ctRepData, d, 8);
+      ctRepLast = 0; ctRepSent = 0; ctRepOn = true;
+      ctReply(client, "{\"ok\":true,\"rep\":true}");
+      return true;
+    }
+    bool ok = ctSend(id, ext, rtr, d, len);
+    ctReply(client, String("{\"ok\":") + (ok ? "true" : "false") + (ok ? "}" : ",\"err\":\"TX gagal (ID/bitrate/ACK?)\"}"));
+    return true;
+  }
+
+  if (reqLine.indexOf("GET /can/txstop") >= 0) {
+    ctRepOn = false;
+    ctReply(client, ctStatusJson());
+    return true;
+  }
+  return false;
+}
+
+// ================= END CAN TOOL =================
+
+// ---------------- CAN (TWAI) ----------------
+void reinitTWAI(bool listenOnly) {
+  twai_stop();
+  twai_driver_uninstall();
+  delay(50);
+
+  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT(
+      CAN_TX_PIN, CAN_RX_PIN, listenOnly ? TWAI_MODE_LISTEN_ONLY : TWAI_MODE_NORMAL);
+  g_config.rx_queue_len = 64; // default 5 -> frame hilang saat web server sibuk
+  g_config.tx_queue_len = 16;
+  twai_timing_config_t t_config = CAN_TIMING_CONFIG;
+  canTimingFor(canBaud, t_config); // bitrate runtime (default 250k / dari NVS)
+  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+  if (twai_driver_install(&g_config, &t_config, &f_config) != ESP_OK) {
+    Serial.println("ERROR: TWAI driver install failed");
+    return;
+  }
+  if (twai_start() != ESP_OK) {
+    Serial.println("ERROR: TWAI start failed");
+    return;
+  }
+  listenOnlyMode = listenOnly;
+  Serial.printf("CAN (TWAI) bitrate: %lu bps\n", (unsigned long)canBaud);
+  Serial.print("CAN (TWAI) started - mode: ");
+  Serial.println(listenOnly ? "LISTEN_ONLY (pasif, tidak ACK)" : "NORMAL (ikut ACK frame di bus)");
+}
+
+void setupCAN() {
+  canPrefs.begin("cantool", true);
+  canBaud = canPrefs.getUInt("baud", 250000);
+  canPrefs.end();
+  { twai_timing_config_t chk; if (!canTimingFor(canBaud, chk)) canBaud = 250000; }
+  reinitTWAI(true); // start safe by default every boot
+}
+
+// ---------------- MID Heartbeat Emulator ----------------
+// Hasil analisis 2 CSV log CAN nyata (MID+controller, lalu MID+baterai):
+// MID broadcast rentetan 9 frame yang SAMA PERSIS tiap ~1 detik, terlepas
+// dari device tujuannya (controller atau baterai). Kalau rentetan ini nggak
+// muncul, baterai maupun controller sama-sama berhenti broadcast dalam
+// ~2.8 detik (~280 frame). Fungsi di bawah ini niru rentetan itu supaya
+// keduanya bisa tetap "hidup" tanpa MID fisik tersambung.
+//
+// PENTING:
+// - Emulator ini defaultnya OFF. Diaktifkan manual lewat tombol/route
+//   "/mid/on" di web dashboard -- jangan nyala otomatis saat boot.
+// - Frame CUMA benar-benar dikirim kalau CAN mode NORMAL (listenOnlyMode
+//   == false). Di LISTEN_ONLY, TWAI memang tidak bisa transmit sama sekali
+//   secara hardware, jadi state machine di bawah sengaja idle di mode itu.
+// (opMode sendiri dideklarasikan di atas, dekat votolWriteUnlocked,
+// supaya sudah dikenal oleh votolStatusJson() yang posisinya lebih awal.)
+uint32_t midHeartbeatCycleStart = 0;
+uint8_t  midHeartbeatStep = 9;   // 9 = siklus "selesai", nunggu 1000ms lalu mulai step 0
+#define MID_HEARTBEAT_PERIOD_MS 1000UL
+
+struct MidHeartbeatStep {
+  uint32_t offsetMs;   // jarak dari awal siklus, sesuai timing asli di log
+  uint32_t id;         // semua ID di sini extended (29-bit)
+  bool     rtr;        // true = Remote Transmission Request (tanpa data)
+  uint8_t  dataByte;   // dipakai hanya kalau rtr == false
+};
+
+// Diambil persis dari log CAN nyata (bagian "Analisis dari CSV" di percakapan):
+// 8 RTR berturutan tiap 15ms, ditutup 1 frame data (0x10261030, 1 byte).
+const MidHeartbeatStep MID_HEARTBEAT_SEQ[9] = {
+  {   0, 0x10261051, true,  0x00 },
+  {  15, 0x10261151, true,  0x00 },
+  {  30, 0x10261100, true,  0x00 },
+  {  45, 0x10261101, true,  0x00 },
+  {  60, 0x10261102, true,  0x00 },
+  {  75, 0x10261200, true,  0x00 },
+  {  90, 0x10261201, true,  0x00 },
+  { 105, 0x10261202, true,  0x00 },
+  { 120, 0x10261030, false, 0x00 },
+};
+
+// Kirim 1 frame CAN mentah (RTR atau data 1-byte), extended 29-bit. Terpisah
+// dari sendVotolCan() karena itu cuma buat data frame biasa (bukan RTR).
+bool sendMidFrame(uint32_t id, bool rtr, uint8_t dataByte) {
+  if (listenOnlyMode) return false; // TWAI gak bisa transmit di LISTEN_ONLY
+  twai_message_t m = {};
+  m.identifier = id;
+  m.extd = 1;
+  m.rtr = rtr ? 1 : 0;
+  if (rtr) {
+    m.data_length_code = 0;
+  } else {
+    m.data_length_code = 1;
+    m.data[0] = dataByte;
+  }
+  esp_err_t e = twai_transmit(&m, pdMS_TO_TICKS(50));
+  return e == ESP_OK;
+}
+
+// Dipanggil tiap iterasi loop(). SENGAJA non-blocking (gak ada delay()) --
+// cuma ngecek millis() dan paling banter kirim 1 frame per panggilan, biar
+// animasi matrix/BLE/WebServer lain di loop() nggak keganggu timing-nya.
+void serviceMidHeartbeat() {
+  if (opMode != OP_MID || listenOnlyMode) return;
+
+  uint32_t now = millis();
+  if (midHeartbeatStep >= 9) {
+    // Siklus sebelumnya sudah selesai; tunggu genap 1000ms sebelum mulai lagi.
+    if (midHeartbeatCycleStart == 0 || now - midHeartbeatCycleStart >= MID_HEARTBEAT_PERIOD_MS) {
+      midHeartbeatCycleStart = now;
+      midHeartbeatStep = 0;
+    } else {
+      return;
+    }
+  }
+
+  const MidHeartbeatStep &s = MID_HEARTBEAT_SEQ[midHeartbeatStep];
+  if (now - midHeartbeatCycleStart >= s.offsetMs) {
+    bool ok = sendMidFrame(s.id, s.rtr, s.dataByte);
+    Serial.printf("MID HEARTBEAT step %u/9 -> id=%lX %s %s\n",
+                  (unsigned)(midHeartbeatStep + 1), (unsigned long)s.id,
+                  s.rtr ? "RTR" : "DATA", ok ? "OK" : "GAGAL");
+    midHeartbeatStep++;
+  }
+}
+// -------------------------------------------------------
+
+// Generic: kirim frame data biasa (bukan RTR), extended 29-bit, sampai 8
+// byte. Dipakai bareng oleh Controller Simulator & Battery Simulator.
+bool sendCanDataFrame(uint32_t id, const uint8_t *data, uint8_t len) {
+  if (listenOnlyMode) return false;
+  twai_message_t m = {};
+  m.identifier = id;
+  m.extd = 1;
+  m.rtr = 0;
+  m.data_length_code = len;
+  memcpy(m.data, data, len);
+  return twai_transmit(&m, pdMS_TO_TICKS(50)) == ESP_OK;
+}
+
+// ---------------- Input manual simulator (buat test fungsi MID, BUKAN manipulasi data) ----------------
+// Default persis sama dengan nilai hardcoded sebelumnya (kondisi diam/aman).
+// Field yang gak pernah diisi lewat form tetap pakai default ini.
+struct SimBatteryInput {
+  int soc = 80, soh = 95, tbat = 28, vbat = 72, ibat = 0, cycle = 50;
+} simBatt;
+struct SimControllerInput {
+  float speedKmh = 0;
+  int   throttlePct = 0;
+  int   mode = 0;          // 0=Eco, 1=Standard, 2=Sport
+  bool  cruise = false;
+  bool  rem = false;
+  bool  park = true;       // default aman: parkir
+  bool  sidestandDown = true; // default aman: standar turun
+  int   tinv = 25, tmot = 25;
+} simCtrl;
+
+// ---------------- Controller Simulator ----------------
+// Dipindah dari sketch emulator (sudah proof di situ). Niru broadcast
+// 0x10261022 + 0x10261023 (~50Hz, sesuai pola asli di log). Nilai disetel
+// ke kondisi diam/aman: park ON, speed 0, rem off, cruise off, side stand
+// turun, throttle 0%, suhu 25°C, torque 0. Ganti angka di bawah kalau mau
+// simulasi kondisi lain, tapi tetap masuk akal (jangan park ON + speed>0).
+uint32_t controllerSimLastMs = 0;
+bool controllerSimToggle = false; // gantian kirim 0x022 lalu 0x023
+
+void serviceControllerSim() {
+  if (opMode != OP_CONTROLLER_SIM || listenOnlyMode) return;
+  if (millis() - controllerSimLastMs < 20) return; // ~50Hz, sesuai pola asli
+  controllerSimLastMs = millis();
+
+  if (!controllerSimToggle) {
+    // 0x10261022: rakit b1 dari input manual (lihat encoding di komentar SimControllerInput)
+    uint8_t modeBits = (simCtrl.mode == 2) ? 0xC0 : (simCtrl.mode == 1 ? 0x40 : 0x00);
+    uint8_t b1 = modeBits
+               | (simCtrl.cruise ? 0x08 : 0x00)
+               | (simCtrl.rem ? 0x04 : 0x00)
+               | (simCtrl.sidestandDown ? 0x10 : 0x00)
+               | (simCtrl.park ? 0x01 : 0x00);
+    uint16_t speedRaw = (uint16_t)constrain((long)round(simCtrl.speedKmh * 12.0f), 0, 65535);
+    uint8_t d[8] = {0x00, b1, (uint8_t)(speedRaw & 0xFF), (uint8_t)(speedRaw >> 8),
+                     (uint8_t)constrain(simCtrl.tinv, 0, 255), (uint8_t)constrain(simCtrl.tmot, 0, 255),
+                     0x00, 0x00};
+    sendCanDataFrame(0x10261022, d, 8);
+  } else {
+    // 0x10261023: byte[2] = throttle % dari input manual
+    uint8_t d[8] = {0x00, 0x00, (uint8_t)constrain(simCtrl.throttlePct, 0, 100), 0x00, 0x00, 0x00, 0x00, 0x00};
+    sendCanDataFrame(0x10261023, d, 8);
+  }
+  controllerSimToggle = !controllerSimToggle;
+}
+
+// ---------------- Battery / BMS Simulator ----------------
+// Dipindah dari sketch emulator, PLUS diupdate pakai temuan sniffing nyata
+// (baterai Greenway/GNW, lihat catatan di chat): byte 0x10261201 & 0x10261203
+// yang tadinya placeholder nol total, sekarang diisi bytes hasil capture
+// asli -- statis di semua SOC yang sudah dibandingkan (100%, 71%), jadi
+// aman dipakai sebagai baseline simulasi (bukan tebakan, ini data nyata).
+// Makna persis tiap byte belum semua terverifikasi -- lihat "note" yang
+// sama di komentar itu; kalau nanti ada yang kepetakan lebih lanjut,
+// update juga baseline di sini biar simulator makin akurat.
+uint32_t batterySimLastMs = 0;
+uint8_t  batterySimStep = 0; // 0..3 -> 0200,0201,0202,0203
+
+void serviceBatterySim() {
+  if (opMode != OP_BATTERY_SIM || listenOnlyMode) return;
+  if (millis() - batterySimLastMs < 250) return;
+  batterySimLastMs = millis();
+
+  switch (batterySimStep) {
+    case 0: {
+      // byte1=SOC%, byte2=SOH%, byte3=suhu baterai, byte4=voltase, byte5=arus(signed) -- dari input manual
+      uint8_t d[8] = {0x00, (uint8_t)constrain(simBatt.soc, 0, 100), (uint8_t)constrain(simBatt.soh, 0, 100),
+                       (uint8_t)constrain(simBatt.tbat, 0, 255), (uint8_t)constrain(simBatt.vbat, 0, 255),
+                       (uint8_t)(int8_t)constrain(simBatt.ibat, -128, 127), 0x00, 0x00};
+      sendCanDataFrame(0x10261200, d, 8);
+      break;
+    }
+    case 1: {
+      // Observasi nyata (statis di SOC 100% & 71%) -- byte[5..7] = "GNW"
+      // (Greenway, brand cell). Sisa byte belum terverifikasi maknanya.
+      uint8_t d[8] = {0x00, 0x86, 0x40, 0x06, 0x17, 0x47, 0x4E, 0x57};
+      sendCanDataFrame(0x10261201, d, 8);
+      break;
+    }
+    case 2: {
+      // Observasi nyata: byte[1]=0x14(20) diduga jumlah cell (20S).
+      // byte[6] = cycle count (cbat) -- dari input manual.
+      uint8_t d[8] = {0x00, 0x14, 0x04, 0x1E, 0x00, 0x00, (uint8_t)constrain(simBatt.cycle, 0, 255), 0x00};
+      sendCanDataFrame(0x10261202, d, 8);
+      break;
+    }
+    case 3: {
+      // Observasi nyata (statis di SOC 100% & 71%), makna byte belum jelas.
+      uint8_t d[8] = {0x00, 0x00, 0x00, 0x04, 0x2B, 0x01, 0xD2, 0x00};
+      sendCanDataFrame(0x10261203, d, 8);
+      break;
+    }
+  }
+  batterySimStep = (batterySimStep + 1) % 4;
+}
+
+String frameToJson(const twai_message_t &msg) {
+  String json = "{\"id\":\"";
+  char idbuf[9];
+  sprintf(idbuf, "%X", msg.identifier);
+  json += idbuf;
+  json += "\",\"dlc\":";
+  json += msg.data_length_code;
+  json += ",\"rtr\":";
+  json += msg.rtr ? "1" : "0";
+  json += ",\"data\":[";
+  for (int i = 0; i < msg.data_length_code; i++) {
+    json += msg.data[i];
+    if (i < msg.data_length_code - 1) json += ",";
+  }
+  json += "],\"t\":";
+  json += millis();
+  json += "}";
+  return json;
+}
+// Helper aman untuk membaca baris dari WiFiClient di ESP32 core v3.x (NetworkClient)
+String readClientLine(WiFiClient &client) {
+  String line = "";
+  unsigned long start = millis();
+  while (client.connected() && millis() - start < 500) {
+    delay(1); // beri waktu ke WiFi/BLE task, jangan busy-wait
+    while (client.available()) {
+      char c = client.read();
+      if (c == '\r') {
+        if (client.peek() == '\n') client.read();
+        return line;
+      } else if (c == '\n') {
+        return line;
+      } else {
+        line += c;
+      }
+    }
+  }
+  return line;
+}
+
+void handleClient(WiFiClient client) {
+  String reqLine = readClientLine(client);
+
+  // ── MATRIX WEB MENU (di-porting dari sketch MATRIX-WEB-PRINT) ──────
+  // Menu lokal di http://192.168.4.1/matrix. Tidak memakai BLE dan tidak
+  // mempengaruhi command AT+NAV dari app.
+  if (reqLine.indexOf("GET /matrix?set=") >= 0) {
+    int p = reqLine.indexOf("GET /matrix?set=") + 16;
+    int e = reqLine.indexOf(' ', p);
+    String key = (e > p) ? reqLine.substring(p, e) : "";
+    int field = MW_NONE;
+    if      (key == "speed")     field = MW_SPEED;
+    else if (key == "rpm")       field = MW_RPM;
+    else if (key == "soc")       field = MW_SOC;
+    else if (key == "soh")       field = MW_SOH;
+    else if (key == "tbat")      field = MW_TBAT;
+    else if (key == "voltage")   field = MW_VOLTAGE;
+    else if (key == "current")   field = MW_CURRENT;
+    else if (key == "power")     field = MW_POWER;
+    else if (key == "cycle")     field = MW_CYCLE;
+    else if (key == "tinv")      field = MW_TINV;
+    else if (key == "tmot")      field = MW_Tmot;
+    else if (key == "throttle")  field = MW_THROTTLE;
+    else if (key == "torque")    field = MW_TORQUE;
+    else if (key == "mode")      field = MW_MODE;
+    else if (key == "park")      field = MW_PARK;
+    else if (key == "cruise")    field = MW_CRUISE;
+    else if (key == "rem")       field = MW_REM;
+    else if (key == "sidestand") field = MW_SIDESTAND;
+    else if (key == "efficiency") field = MW_EFFICIENCY;
+    else if (key == "energy") field = MW_ENERGY;
+    else if (key == "ah") field = MW_AH;
+    else if (key == "ahkm") field = MW_AH_KM;
+    else if (key == "kmah") field = MW_KM_AH;
+    else if (key == "tarif") field = MW_TARIF;
+    else if (key == "tarifkm") field = MW_TARIF_KM;
+    else if (key == "off")       field = MW_NONE;
+
+    showMatrixWebField(field);
+    client.println("HTTP/1.1 303 See Other");
+    client.println("Location: /matrix");
+    client.println("Cache-Control: no-store");
+    client.println("Connection: close");
+    client.println();
+    client.stop();
+    return;
+  }
+
+  // ── MATRIX CUSTOM + ANIMASI: http://192.168.4.1/matrixfx ───────────
+  // HARUS sebelum blok "GET /matrix" di bawah (indexOf-nya juga cocok ke "/matrixfx").
+  if (reqLine.indexOf("GET /matrixfx") >= 0) {
+    String q = extractQuery(reqLine);
+    bool changed = false;
+    String v;
+    if (fxQ(q, "f", v)) {                         // submit form lengkap
+      int m = fxQ(q, "m", v) ? v.toInt() : fxMode;
+      fxMode = (m >= 1 && m <= FX_LAST) ? m : FX_TEXT;
+      if (fxQ(q, "txt", v)) {
+        String t = fxUrlDecode(v), clean;
+        for (unsigned i = 0; i < t.length() && clean.length() < FX_TEXT_MAX; i++)
+          if (t[i] >= 0x20 && t[i] <= 0x7E) clean += t[i];
+        clean.trim();
+        if (clean.length() == 0) clean = "GESITS";
+        clean.toCharArray(fxText, FX_TEXT_MAX + 1);
+      }
+      if (fxQ(q, "eff", v)) fxEffect = constrain(v.toInt(), 0, FX_EFFECT_COUNT - 1);
+      if (fxQ(q, "spd", v)) fxSpeedMs = constrain(v.toInt(), 10, 300);
+      if (fxQ(q, "pau", v)) fxPauseMs = constrain(v.toInt(), 0, 10000);
+      if (fxQ(q, "br", v))  fxBright  = constrain(v.toInt(), 0, 15);
+      if (fxQ(q, "cyc", v)) fxCycleSec = constrain(v.toInt(), 3, 60);
+      fxFlip      = fxQ(q, "flip", v) && v == "1";
+      fxAutoBrake = fxQ(q, "abr", v)  && v == "1";
+      fxAutoStart = fxQ(q, "auto", v) && v == "1";
+      changed = true;
+    } else if (fxQ(q, "m", v)) {                  // tombol cepat ganti mode
+      int m = v.toInt();
+      fxMode = (m >= 0 && m <= FX_LAST) ? m : FX_OFF;
+      changed = true;
+    }
+    if (changed) {
+      fxApply(true);
+      client.println("HTTP/1.1 303 See Other");
+      client.println("Location: /matrixfx");
+      client.println("Cache-Control: no-store");
+      client.println("Connection: close");
+      client.println();
+      client.stop();
+      return;
+    }
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html; charset=utf-8");
+    client.println("Cache-Control: no-store");
+    client.println("Connection: close");
+    client.println();
+    client.print(R"FXPAGE(<!doctype html><html lang='id'><head><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Matrix Custom</title><style>
+body{margin:0;background:#071018;color:#edf3f7;font-family:Arial,sans-serif;padding:18px;max-width:480px;margin:auto}
+h1{font-size:20px;margin:0 0 5px}.sub{color:#8fa0ad;font-size:12px;margin-bottom:16px}
+.card{background:#101b24;border:1px solid #263744;border-radius:14px;padding:14px;margin-bottom:12px}
+h2{font-size:13px;margin:0 0 10px;color:#8fa0ad;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{display:block;text-decoration:none;text-align:center;padding:11px 7px;border-radius:9px;border:1px solid #2b3c49;background:#16232d;color:#eaf1f5;font-size:12px}
+.btn.on{border-color:#16c15a;background:#102b1d;color:#16c15a}
+.off{display:block;text-align:center;margin-top:10px;padding:10px;border-radius:9px;border:1px solid #633;color:#ff8a8a;text-decoration:none;font-size:12px}
+label{display:block;font-size:12px;color:#8fa0ad;margin:12px 0 4px}
+input[type=text],select{width:100%;box-sizing:border-box;padding:10px;border-radius:9px;border:1px solid #2b3c49;background:#0b141b;color:#fff;font-size:14px}
+input[type=range]{width:100%}.rv{float:right;color:#fff}
+.chk{display:flex;gap:8px;align-items:center;font-size:12px;color:#eaf1f5;margin:10px 0 0}
+.go{display:block;width:100%;margin-top:14px;padding:12px;border-radius:9px;border:1px solid #16c15a;background:#102b1d;color:#16c15a;font-size:14px;font-weight:700}
+.note{font-size:11px;color:#718391;line-height:1.5;margin-top:10px}
+.back{display:block;text-align:center;margin-top:14px;padding:10px;border-radius:9px;border:1px solid #263744;color:#8fa0ad;text-decoration:none;font-size:12px}
+</style></head><body><h1>Matrix Custom &amp; Animasi</h1><div class='sub'>192.168.4.1/matrixfx &middot; tampilan belakang motor</div>)FXPAGE");
+
+    client.print("<div class='card'><h2>Aktif: ");
+    client.print(matrixControlSource == MATRIX_SRC_FX ? FX_MODE_NAMES[fxMode] : "bukan mode ini");
+    client.print(fxBrakeOverride ? " (override REM)" : "");
+    client.print("</h2><div class='grid' style='display:none'>");
+    for (int m = 1; m <= FX_LAST; m++) {
+      const char* gt = fxGroupTitle(m);
+      if (gt) { client.print("</div><h2 style='margin:14px 0 8px'>"); client.print(gt); client.print("</h2><div class='grid'>"); }
+      client.print("<a class='btn");
+      if (matrixControlSource == MATRIX_SRC_FX && fxMode == m) client.print(" on");
+      client.print("' href='/matrixfx?m=");
+      client.print(m);
+      client.print("'>");
+      client.print(FX_MODE_NAMES[m]);
+      client.print("</a>");
+    }
+    client.print("</div><a class='off' href='/matrixfx?m=0'>MATIKAN MATRIX</a></div>");
+
+    client.print("<form class='card' method='get' action='/matrixfx'><h2>Pengaturan</h2>");
+    client.print("<input type='hidden' name='f' value='1'><input type='hidden' name='m' value='");
+    client.print(fxMode == FX_OFF ? (int)FX_TEXT : (int)fxMode);
+    client.print("'><label>Teks (maks 40 karakter, ASCII)</label><input type='text' name='txt' maxlength='40' value='");
+    client.print(fxHtmlEsc(fxText));
+    client.print("'><label>Efek teks (mode Teks Custom)</label><select name='eff'>");
+    for (int i = 0; i < FX_EFFECT_COUNT; i++) {
+      client.print("<option value='"); client.print(i); client.print("'");
+      if (i == fxEffect) client.print(" selected");
+      client.print(">"); client.print(FX_EFFECT_NAMES[i]); client.print("</option>");
+    }
+    client.print("</select>");
+    client.print("<label>Delay per langkah (ms, kecil = cepat) <span class='rv'>");
+    client.print(fxSpeedMs);
+    client.print("</span></label><input type='range' name='spd' min='10' max='300' value='");
+    client.print(fxSpeedMs);
+    client.print("' oninput='this.previousElementSibling.lastElementChild.textContent=this.value'>");
+    client.print("<label>Jeda teks (ms) <span class='rv'>");
+    client.print(fxPauseMs);
+    client.print("</span></label><input type='range' name='pau' min='0' max='5000' step='100' value='");
+    client.print(fxPauseMs);
+    client.print("' oninput='this.previousElementSibling.lastElementChild.textContent=this.value'>");
+    client.print("<label>Kecerahan (0-15) <span class='rv'>");
+    client.print(fxBright);
+    client.print("</span></label><input type='range' name='br' min='0' max='15' value='");
+    client.print(fxBright);
+    client.print("' oninput='this.previousElementSibling.lastElementChild.textContent=this.value'>");
+    client.print("<label>Durasi tiap efek, mode Putar Semua (detik) <span class='rv'>");
+    client.print(fxCycleSec);
+    client.print("</span></label><input type='range' name='cyc' min='3' max='60' value='");
+    client.print(fxCycleSec);
+    client.print("' oninput='this.previousElementSibling.lastElementChild.textContent=this.value'>");
+    client.print("<div class='chk'><input type='checkbox' name='flip' value='1' id='c1'");
+    if (fxFlip) client.print(" checked");
+    client.print("><label for='c1' style='margin:0;color:#eaf1f5'>Balik arah kiri&harr;kanan (animasi pixel)</label></div>");
+    client.print("<div class='chk'><input type='checkbox' name='abr' value='1' id='c2'");
+    if (fxAutoBrake) client.print(" checked");
+    client.print("><label for='c2' style='margin:0;color:#eaf1f5'>Otomatis jadi lampu rem saat REM aktif</label></div>");
+    client.print("<div class='chk'><input type='checkbox' name='auto' value='1' id='c3'");
+    if (fxAutoStart) client.print(" checked");
+    client.print("><label for='c3' style='margin:0;color:#eaf1f5'>Langsung aktif setelah ESP32 menyala</label></div>");
+    client.print(R"FXPAGE(<button class='go' type='submit'>Simpan &amp; Tampilkan</button>
+<div class='note'>&bull; Tes arah dulu: pilih <b>Sein Kiri</b>; kalau sapuannya malah ke kanan, centang <b>Balik arah</b>.<br>
+&bull; <b>Teks Kedip</b>: pakai teks pendek (maks ~5 huruf), kedip = 10&times; delay.<br>
+&bull; Animasi pixel: delay = kecepatan frame (sebagian efek otomatis dibuat lebih lambat/cepat). Sein bagus di 30&ndash;45 ms.<br>
+&bull; <b>Putar Semua</b> memutar teks + efek visual bergantian; sein/hazard/rem/bar tidak ikut.<br>
+&bull; Override REM hanya jalan saat sumber Matrix = mode ini. Data BLE/CAN lain mengambil alih Matrix kalau dipilih.<br>
+&bull; Ini hanya tampilan tambahan; lampu sein &amp; rem resmi motor tetap harus berfungsi.</div></form>
+<a class='back' href='/matrix'>&larr; Menu data Matrix (CAN)</a><a class='back' href='/'>&larr; Dashboard utama</a></body></html>)FXPAGE");
+    client.stop();
+    return;
+  }
+
+  if (reqLine.indexOf("GET /matrix") >= 0) {
+    const char* names[] = {
+      "speed","rpm","soc","soh","tbat","voltage","current","power","cycle",
+      "tinv","tmot","throttle","torque","mode","park","cruise","rem","sidestand",
+      "efficiency","energy","ah",
+      "ahkm","kmah","tarif","tarifkm"
+    };
+    const char* labels[] = {
+      "Kecepatan","RPM BLDC","SOC","SOH","Suhu Baterai","Voltase","Arus","Daya","Cycle",
+      "Suhu Inverter","Suhu Motor","Throttle","Torque Raw","Mode","Park","Cruise","Rem","Side Stand",
+      "Efisiensi","Energi Terpakai","Ah Terpakai",
+      "Ah per Km","Km per Ah","Tarif (Rp)","Tarif per Km"
+    };
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html; charset=utf-8");
+    client.println("Cache-Control: no-store");
+    client.println("Connection: close");
+    client.println();
+    client.print(R"MATRIX(<!doctype html><html lang='id'><head><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>Matrix GESITS</title><style>
+body{margin:0;background:#071018;color:#edf3f7;font-family:Arial,sans-serif;padding:18px;max-width:480px;margin:auto}
+h1{font-size:20px;margin:0 0 5px}.sub{color:#8fa0ad;font-size:12px;margin-bottom:16px}
+.card{background:#101b24;border:1px solid #263744;border-radius:14px;padding:14px;margin-bottom:12px}
+.src{font-size:12px;padding:8px 10px;border-radius:9px;margin-bottom:12px;border:1px solid}
+.src.web{color:#16c15a;border-color:#1d5a37;background:#0e2318}
+.src.ble{color:#5ab8ff;border-color:#1d4a6b;background:#0e1e28}
+.now{font-size:12px;color:#8fa0ad;margin-bottom:6px}.value{font:700 36px monospace;text-align:center;padding:12px 4px;color:#fff;min-height:43px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.btn{display:block;text-decoration:none;text-align:center;padding:11px 7px;border-radius:9px;border:1px solid #2b3c49;background:#16232d;color:#eaf1f5;font-size:12px}.btn.on{border-color:#16c15a;background:#102b1d;color:#16c15a}
+.off{display:block;text-align:center;margin-top:10px;padding:10px;border-radius:9px;border:1px solid #633;color:#ff8a8a;text-decoration:none;font-size:12px}
+.note{font-size:11px;color:#718391;line-height:1.5;margin-top:12px}
+.back{display:block;text-align:center;margin-top:14px;padding:10px;border-radius:9px;border:1px solid #263744;color:#8fa0ad;text-decoration:none;font-size:12px}
+</style></head><body><h1>Matrix Display</h1><div class='sub'>192.168.4.1 &middot; pilih sumber tampilan Matrix</div>)MATRIX");
+
+    if (matrixControlSource == MATRIX_SRC_BLE) {
+      client.print(R"MATRIX(<div class='src ble'>Sumber aktif: <b>BLE (App)</b> &mdash; teks dari NAV_TEXT. Pilih data di bawah utk ambil alih ke CAN.</div>)MATRIX");
+    } else if (matrixControlSource == MATRIX_SRC_FX) {
+      client.print(R"MATRIX(<div class='src web'>Sumber aktif: <b>Custom / Animasi</b> &mdash; diatur di menu Custom &amp; Animasi di bawah.</div>)MATRIX");
+    } else if (matrixControlSource == MATRIX_SRC_WEB) {
+      client.print(R"MATRIX(<div class='src web'>Sumber aktif: <b>CAN (Web)</b> &mdash; hanya angka, mode print, live mengikuti data CAN.</div>)MATRIX");
+    } else {
+      client.print(R"MATRIX(<div class='src web'>Sumber: belum ada &mdash; Matrix mati. Pilih data di bawah utk aktifkan dari CAN.</div>)MATRIX");
+    }
+
+    client.print(R"MATRIX(<div class='card'><div class='now'>)MATRIX");
+    client.print(matrixControlSource == MATRIX_SRC_BLE ? "Pilihan CAN tersimpan (Matrix fisik sedang menampilkan teks BLE):" : "Tampilan aktif:");
+    client.print(" ");
+    client.print(matrixWebFieldName(matrixWebField));
+    client.print(R"MATRIX(</div><div class='value'>)MATRIX");
+    client.print(matrixWebValue(matrixWebField));
+    client.print(R"MATRIX(</div></div><div class='card'><div class='grid'>)MATRIX");
+    for (int i=0;i<25;i++) {
+      int field = i + 1;
+      client.print("<a class='btn");
+      if (matrixWebField == field) client.print(" on");
+      client.print("' href='/matrix?set=");
+      client.print(names[i]);
+      client.print("'>");
+      client.print(labels[i]);
+      client.print("</a>");
+    }
+    client.print(R"MATRIX(</div><a class='btn' style='margin-top:10px' href='/matrixfx'>&#10024; Custom &amp; Animasi &rarr;</a><a class='off' href='/matrix?set=off'>MATIKAN MATRIX</a><div class='note'>Setiap pilihan langsung dicetak di tengah Matrix. Tidak ada label, satuan, scroll, atau rotasi otomatis.</div><a class='back' href='/'>&larr; Kembali ke dashboard utama</a></div></body></html>)MATRIX");
+    client.stop();
+    return;
+  }
+
+  // Baca sisa header sampai baris kosong
+  while (client.connected()) {
+    String line = readClientLine(client);
+    if (line.length() == 0) break;
+  }
+
+  if (handleCanTool(client, reqLine)) return; // /cantool + /can/*
+
+  if (reqLine.indexOf("GET /mode?set=normal") >= 0) {
+    reinitTWAI(false);
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"mode\":\"normal\"}");
+    client.stop();
+    return;
+  }
+
+  if (reqLine.indexOf("GET /mode?set=listen") >= 0) {
+    reinitTWAI(true);
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"mode\":\"listen\"}");
+    client.stop();
+    return;
+  }
+
+  if (reqLine.indexOf("GET /mode") >= 0) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print(listenOnlyMode ? "{\"mode\":\"listen\"}" : "{\"mode\":\"normal\"}");
+    client.stop();
+    return;
+  }
+
+  // VOTOL tool: read the controller's live programming/diagnostic block.
+  if (reqLine.indexOf("GET /votol/read") >= 0) {
+    bool ok = votolRequestLiveData();
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print(String("{\"sent\":") + (ok ? "true" : "false") + "}");
+    client.stop();
+    return;
+  }
+
+  if (reqLine.indexOf("GET /votol/status") >= 0) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print(votolStatusJson());
+    client.stop();
+    return;
+  }
+
+  // Toggle emulator heartbeat MID (lihat serviceMidHeartbeat()). Ini set
+  // opMode ke OP_MID -- otomatis matiin Controller/Battery Sim kalau lagi
+  // aktif (exclusive, lihat catatan di deklarasi enum OpMode). Kalau CAN
+  // mode masih LISTEN_ONLY, emulator otomatis idle sampai mode dipindah ke
+  // NORMAL (nggak bisa transmit di LISTEN_ONLY).
+  if (reqLine.indexOf("GET /mid/on") >= 0) {
+    opMode = OP_MID;
+    midHeartbeatStep = 9; // paksa mulai siklus baru dari step 0 di panggilan loop() berikutnya
+    midHeartbeatCycleStart = 0;
+    Serial.println("MID HEARTBEAT: emulator diaktifkan.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"midEmulate\":true,\"opMode\":1}");
+    client.stop();
+    return;
+  }
+  if (reqLine.indexOf("GET /mid/off") >= 0) {
+    opMode = OP_OFF;
+    Serial.println("MID HEARTBEAT: emulator dimatikan.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"midEmulate\":false,\"opMode\":0}");
+    client.stop();
+    return;
+  }
+
+  // Controller Simulator & Battery Simulator (dipindah dari sketch emulator).
+  // WAJIB dicabut fisik device asli yg ditiru sebelum dipakai -- lihat
+  // komentar panjang di deklarasi enum OpMode & di serviceControllerSim()/
+  // serviceBatterySim(). Exclusive dgn MID Emulator & satu sama lain.
+  if (reqLine.indexOf("GET /sim?set=controller") >= 0) {
+    opMode = OP_CONTROLLER_SIM;
+    controllerSimToggle = false;
+    Serial.println("SIM: Controller Simulator diaktifkan -- pastikan controller asli SUDAH DICABUT.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"opMode\":2}");
+    client.stop();
+    return;
+  }
+  if (reqLine.indexOf("GET /sim?set=battery") >= 0) {
+    opMode = OP_BATTERY_SIM;
+    batterySimStep = 0;
+    Serial.println("SIM: Battery Simulator diaktifkan -- pastikan baterai asli SUDAH DICABUT.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"opMode\":3}");
+    client.stop();
+    return;
+  }
+  if (reqLine.indexOf("GET /sim?set=off") >= 0) {
+    opMode = OP_OFF;
+    Serial.println("SIM: semua simulator/emulator dimatikan.");
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"opMode\":0}");
+    client.stop();
+    return;
+  }
+
+  // Input manual Battery Simulator (test fungsi MID, BUKAN buat manipulasi
+  // data ke kendaraan asli -- cuma dipakai kalau opMode == OP_BATTERY_SIM,
+  // dan bahkan itu pun cuma transmit kalau CAN mode NORMAL + baterai asli
+  // sudah dicabut fisik). Param yang gak dikirim tetap pakai nilai terakhir.
+  if (reqLine.indexOf("GET /sim/battery/set?") >= 0) {
+    String q = extractQuery(reqLine);
+    simBatt.soc   = getQueryParamInt(q, "soc", simBatt.soc);
+    simBatt.soh   = getQueryParamInt(q, "soh", simBatt.soh);
+    simBatt.tbat  = getQueryParamInt(q, "tbat", simBatt.tbat);
+    simBatt.vbat  = getQueryParamInt(q, "vbat", simBatt.vbat);
+    simBatt.ibat  = getQueryParamInt(q, "ibat", simBatt.ibat);
+    simBatt.cycle = getQueryParamInt(q, "cycle", simBatt.cycle);
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"ok\":true,\"soc\":" + String(simBatt.soc) + ",\"soh\":" + String(simBatt.soh) +
+                  ",\"tbat\":" + String(simBatt.tbat) + ",\"vbat\":" + String(simBatt.vbat) +
+                  ",\"ibat\":" + String(simBatt.ibat) + ",\"cycle\":" + String(simBatt.cycle) + "}");
+    client.stop();
+    return;
+  }
+
+  // Input manual Controller Simulator -- sama catatannya dgn di atas.
+  if (reqLine.indexOf("GET /sim/controller/set?") >= 0) {
+    String q = extractQuery(reqLine);
+    simCtrl.speedKmh     = getQueryParamFloat(q, "speed", simCtrl.speedKmh);
+    simCtrl.throttlePct  = getQueryParamInt(q, "throttle", simCtrl.throttlePct);
+    simCtrl.mode         = getQueryParamInt(q, "mode", simCtrl.mode);
+    simCtrl.cruise       = getQueryParamInt(q, "cruise", simCtrl.cruise ? 1 : 0) != 0;
+    simCtrl.rem          = getQueryParamInt(q, "rem", simCtrl.rem ? 1 : 0) != 0;
+    simCtrl.park         = getQueryParamInt(q, "park", simCtrl.park ? 1 : 0) != 0;
+    simCtrl.sidestandDown= getQueryParamInt(q, "sidestand", simCtrl.sidestandDown ? 1 : 0) != 0;
+    simCtrl.tinv         = getQueryParamInt(q, "tinv", simCtrl.tinv);
+    simCtrl.tmot         = getQueryParamInt(q, "tmot", simCtrl.tmot);
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"ok\":true,\"speed\":" + String(simCtrl.speedKmh, 1) + ",\"throttle\":" + String(simCtrl.throttlePct) +
+                  ",\"mode\":" + String(simCtrl.mode) + ",\"cruise\":" + String(simCtrl.cruise ? 1 : 0) +
+                  ",\"rem\":" + String(simCtrl.rem ? 1 : 0) + ",\"park\":" + String(simCtrl.park ? 1 : 0) +
+                  ",\"sidestand\":" + String(simCtrl.sidestandDown ? 1 : 0) +
+                  ",\"tinv\":" + String(simCtrl.tinv) + ",\"tmot\":" + String(simCtrl.tmot) + "}");
+    client.stop();
+    return;
+  }
+
+
+  // Explicit two-step unlock. This does NOT write anything to the controller.
+  if (reqLine.indexOf("GET /votol/unlock") >= 0) {
+    if (telem.speedKmh > 0.5f || contactRelayOn) {
+      votolWriteUnlocked = false;
+      client.println("HTTP/1.1 409 Conflict");
+      client.println("Content-Type: application/json");
+      client.println("Connection: close");
+      client.println();
+      client.print("{\"ok\":false,\"reason\":\"motor_must_be_stationary_and_contact_off\"}");
+      client.stop();
+      return;
+    }
+    votolWriteUnlocked = true;
+    votolWriteUnlockUntil = millis() + VOTOL_WRITE_UNLOCK_MS;
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print("{\"ok\":true,\"expires_ms\":60000}");
+    client.stop();
+    return;
+  }
+
+  // Raw write endpoint. Query format:
+  // /votol/write?id=3FF&ext=0&data=09,55,AA,AA,00,AA,00,00
+  if (reqLine.indexOf("GET /votol/write?") >= 0) {
+    if (!votolWriteUnlocked || millis() > votolWriteUnlockUntil) {
+      votolWriteUnlocked = false;
+      client.println("HTTP/1.1 403 Forbidden");
+      client.println("Content-Type: application/json");
+      client.println("Connection: close");
+      client.println();
+      client.print("{\"ok\":false,\"reason\":\"write_locked\"}");
+      client.stop();
+      return;
+    }
+
+    int q = reqLine.indexOf('?');
+    int sp = reqLine.indexOf(' ', q);
+    String query = (q >= 0 && sp > q) ? reqLine.substring(q + 1, sp) : "";
+    String idS="", extS="0", dataS="";
+    int p1=query.indexOf("id=");
+    int p2=query.indexOf("ext=");
+    int p3=query.indexOf("data=");
+    if (p1>=0) { int e=query.indexOf('&',p1); if(e<0)e=query.length(); idS=query.substring(p1+3,e); }
+    if (p2>=0) { int e=query.indexOf('&',p2); if(e<0)e=query.length(); extS=query.substring(p2+4,e); }
+    if (p3>=0) { int e=query.indexOf('&',p3); if(e<0)e=query.length(); dataS=query.substring(p3+5,e); }
+
+    char *endp=nullptr;
+    uint32_t id=(uint32_t)strtoul(idS.c_str(),&endp,16);
+    bool validId = idS.length()>0 && endp && *endp=='\0' && id <= 0x1FFFFFFF;
+    bool extended = extS == "1";
+
+    uint8_t data[8]; uint8_t len=0; bool validData=true;
+    int start=0;
+    while (start < (int)dataS.length() && len < 8) {
+      int comma=dataS.indexOf(',',start);
+      if(comma<0) comma=dataS.length();
+      String tok=dataS.substring(start,comma); tok.trim();
+      if(!parseHexByte(tok,data[len])) { validData=false; break; }
+      len++;
+      start=comma+1;
+    }
+    if (len==0 || !validId) validData=false;
+
+    bool ok = validData && votolRawWrite(id,data,len,extended);
+    client.println(ok ? "HTTP/1.1 200 OK" : "HTTP/1.1 400 Bad Request");
+    client.println("Content-Type: application/json");
+    client.println("Connection: close");
+    client.println();
+    client.print(String("{\"ok\":") + (ok ? "true" : "false") +
+                ",\"id\":\"" + String(id,HEX) + "\",\"dlc\":" + String(len) + "}");
+    client.stop();
+    return;
+  }
+
+  if (reqLine.indexOf("GET /events") >= 0) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/event-stream");
+    client.println("Cache-Control: no-cache");
+    client.println("Connection: keep-alive");
+    client.println("Access-Control-Allow-Origin: *");
+    client.println();
+    sseClient = client;
+    sseClientActive = true;
+    Serial.println("SSE client connected.");
+    return;
+  }
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html");
+  client.println("Connection: close");
+  client.println();
+  client.print(INDEX_HTML);
+  delay(2);
+  client.stop();
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n=== Gesits CAN Sniffer - Full ===");
+
+  pinMode(CRUISE_LED_PIN, OUTPUT);
+  digitalWrite(CRUISE_LED_PIN, LOW);
+  pinMode(WARNING_PIN, OUTPUT);
+  digitalWrite(WARNING_PIN, LOW);
+  pinMode(CONTACT_RELAY_PIN, OUTPUT);
+  digitalWrite(CONTACT_RELAY_PIN, LOW);
+
+  matrixDisp.begin();
+  fxLoad();                              // pengaturan Matrix custom dari NVS
+  matrixDisp.setIntensity(fxBright);     // kecerahan 0-15 (default 4)
+  matrixDisp.setTextAlignment(PA_CENTER);
+  showOnMatrix("GESITS SIAP");
+  if (fxAutoStart && fxMode != FX_OFF) fxApply(false);
+
+  // DFPlayer gak punya handshake "begin() -> bool" karena kita gak pakai
+  // library — cukup buka serial-nya, kasih jeda boot modul (khas DFPlayer
+  // butuh ~1-1.5s stabil setelah power-on), lalu langsung kirim volume.
+  // Kalau modul/SD card gak kepasang, command ini simply gak direspons —
+  // fitur lain (CAN/BLE/relay) tetap jalan normal, cuma tone yang bisu.
+#if ENABLE_DFPLAYER
+  dfSerial.begin(9600, SERIAL_8N1, DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
+  delay(1000);
+  df_setVolume(DFPLAYER_VOLUME);
+  dfPlayerReady = true;
+  Serial.println("DFPlayer Mini: command volume terkirim (cek fisik speaker utk verifikasi wiring/SD card).");
+#else
+  Serial.println("DFPlayer: OFF (ENABLE_DFPLAYER=0).");
+#endif
+
+  setupCAN();
+  setupBLE();
+
+  // Channel di-fix eksplisit (bukan auto) — WAJIB biar remote ESP-NOW bisa
+  // ketemu tanpa perlu scan/sync channel tambahan. Kalau channel ini
+  // diubah, channel di firmware remote HARUS ikut diubah juga.
+#if ENABLE_WIFI_DASHBOARD
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP(AP_SSID, AP_PASSWORD, 6);
+  WiFi.setTxPower(WIFI_POWER_11dBm); // turunkan puncak arus (anti-brownout); naikkan ke WIFI_POWER_19_5dBm kalau sinyal kurang
+  Serial.printf("Reset terakhir: %s\n", ctResetReason());
+ // channel 6 — dites ganti dari 1 krn dugaan channel 1 padat interferensi di sekitar
+  Serial.print("WiFi hotspot: "); Serial.println(AP_SSID);
+  Serial.print("Password: "); Serial.println(AP_PASSWORD);
+  Serial.print("Buka di browser HP: http://"); Serial.println(WiFi.softAPIP());
+  Serial.print("MAC (buat diisi ke DOIT_MAC[] di firmware remote): ");
+  Serial.println(WiFi.softAPmacAddress());
+#else
+  // Dashboard OFF — WiFi tetap perlu nyala krn radio-nya dipinjam ESP-NOW,
+  // tapi mode STA doang (gak broadcast beacon AP terus-menerus kayak
+  // sebelumnya, jadi radio lebih longgar buat ESP-NOW).
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(); // gak nyoba connect ke jaringan manapun, cuma butuh radio-nya
+  esp_wifi_set_channel(6, WIFI_SECOND_CHAN_NONE); // WAJIB dipaksa manual —
+                                                    // STA yg gak konek ke AP
+                                                    // manapun gak otomatis
+                                                    // punya channel aktif.
+                                                    // HARUS SAMA dgn channel
+                                                    // di firmware remote.
+  Serial.println("WiFi dashboard: OFF (ENABLE_WIFI_DASHBOARD=0) — CAN/BLE/relay/ESP-NOW tetap jalan normal.");
+  Serial.print("MAC (buat diisi ke DOIT_MAC[] di firmware remote): ");
+  Serial.println(WiFi.macAddress());
+  Serial.println("^ PENTING: MAC ini BEDA dari MAC AP sebelumnya (mode WiFi beda = MAC beda).");
+  Serial.println("  Cek DOIT_MAC[] di firmware remote masih cocok apa enggak sama MAC di atas.");
+#endif
+  esp_wifi_set_ps(WIFI_PS_NONE); // WAJIB — sama alasannya kayak di firmware
+                                  // remote: matiin modem-sleep biar ESP-NOW
+                                  // gak kadang-gagal-kadang-berhasil secara
+                                  // acak. DOIT nyolok listrik terus (bukan
+                                  // baterai), jadi gak ada trade-off sama
+                                  // sekali buat matiin power-save di sini.
+
+  // DEBUG: konfirmasi channel yg BENERAN aktif di radio DOIT
+  uint8_t actualChannel; wifi_second_chan_t actualSecond;
+  esp_wifi_get_channel(&actualChannel, &actualSecond);
+  Serial.print("DEBUG channel radio DOIT aktual = "); Serial.println(actualChannel);
+
+#if ENABLE_ESPNOW_REMOTE
+  setupEspNowRemote();
+#else
+  Serial.println("ESP-NOW remote: OFF (ENABLE_ESPNOW_REMOTE=0).");
+#endif
+
+#if ENABLE_WIFI_DASHBOARD
+  server.begin();
+#endif
+}
+
+// Eksekusi command mode CAN dari antrean BLE (dipanggil dari loop()).
+void reportCanStatusBle() {
+  bleSendLine(String("CANMODE=") + (listenOnlyMode ? "0" : "1"));
+  bleSendLine(String("MIDEMU=")  + (opMode == OP_MID ? "1" : "0"));
+  bleSendLine(String("SIMMODE=") + String((int)opMode));
+}
+void processSimManualInput() {
+  uint8_t t = pendingSimQueryType;
+  if (!t) return;
+  String q = String(pendingSimQuery);
+  if (t == 1) {
+    simBatt.soc   = constrain(getQueryParamInt(q, "soc",   simBatt.soc),   0, 100);
+    simBatt.soh   = constrain(getQueryParamInt(q, "soh",   simBatt.soh),   0, 100);
+    simBatt.tbat  = constrain(getQueryParamInt(q, "tbat",  simBatt.tbat), -40, 120);
+    simBatt.vbat  = constrain(getQueryParamInt(q, "vbat",  simBatt.vbat),   0, 200);
+    simBatt.ibat  = constrain(getQueryParamInt(q, "ibat",  simBatt.ibat), -300, 300);
+    simBatt.cycle = constrain(getQueryParamInt(q, "cycle", simBatt.cycle),  0, 65535);
+    Serial.println("BLE SIM: input manual baterai diterima");
+  } else {
+    simCtrl.speedKmh      = constrain(getQueryParamFloat(q, "speed", simCtrl.speedKmh), 0.0f, 200.0f);
+    simCtrl.throttlePct   = constrain(getQueryParamInt(q, "throttle", simCtrl.throttlePct), 0, 100);
+    simCtrl.mode          = constrain(getQueryParamInt(q, "mode", simCtrl.mode), 0, 2);
+    simCtrl.cruise        = getQueryParamInt(q, "cruise", simCtrl.cruise ? 1 : 0) != 0;
+    simCtrl.rem           = getQueryParamInt(q, "rem", simCtrl.rem ? 1 : 0) != 0;
+    simCtrl.park          = getQueryParamInt(q, "park", simCtrl.park ? 1 : 0) != 0;
+    simCtrl.sidestandDown = getQueryParamInt(q, "sidestand", simCtrl.sidestandDown ? 1 : 0) != 0;
+    simCtrl.tinv          = constrain(getQueryParamInt(q, "tinv", simCtrl.tinv), -40, 200);
+    simCtrl.tmot          = constrain(getQueryParamInt(q, "tmot", simCtrl.tmot), -40, 200);
+    Serial.println("BLE SIM: input manual kontroler diterima");
+  }
+  pendingSimQueryType = 0;
+  bleSendLine(String("SIMSET=") + String((int)t)); // konfirmasi: 1 = baterai, 2 = kontroler
+}
+void processCanCmdQueue() {
+  processSimManualInput();
+  while (canCmdTail != canCmdHead) {
+    uint8_t c = canCmdQueue[canCmdTail];
+    canCmdTail = (canCmdTail + 1) % CANCMD_QUEUE_SIZE;
+    switch (c) {
+      case CANCMD_NORMAL:
+        if (listenOnlyMode) reinitTWAI(false);
+        Serial.println("BLE: CAN -> NORMAL (ikut ACK)");
+        break;
+      case CANCMD_LISTEN:
+        opMode = OP_OFF; // matikan emulator/simulator dulu, LISTEN_ONLY tidak bisa transmit
+        if (!listenOnlyMode) reinitTWAI(true);
+        Serial.println("BLE: CAN -> LISTEN_ONLY (pasif)");
+        break;
+      case CANCMD_MID_ON:
+        if (listenOnlyMode) reinitTWAI(false); // heartbeat butuh NORMAL
+        opMode = OP_MID;
+        midHeartbeatStep = 9;
+        midHeartbeatCycleStart = 0;
+        Serial.println("BLE: MID HEARTBEAT emulator ON (CAN NORMAL)");
+        break;
+      case CANCMD_MID_OFF:
+        if (opMode == OP_MID) opMode = OP_OFF;
+        Serial.println("BLE: MID HEARTBEAT emulator OFF");
+        break;
+      case CANCMD_SIM_CTRL:
+        // WAJIB: controller asli sudah dicabut dari bus (app sudah kasih peringatan + konfirmasi 2-tap)
+        if (listenOnlyMode) reinitTWAI(false); // simulator butuh NORMAL supaya bisa transmit
+        opMode = OP_CONTROLLER_SIM;
+        controllerSimToggle = false;
+        Serial.println("BLE SIM: Controller Simulator ON -- pastikan controller asli SUDAH DICABUT.");
+        break;
+      case CANCMD_SIM_BATT:
+        // WAJIB: baterai asli sudah dicabut dari bus
+        if (listenOnlyMode) reinitTWAI(false);
+        opMode = OP_BATTERY_SIM;
+        batterySimStep = 0;
+        Serial.println("BLE SIM: Battery Simulator ON -- pastikan baterai asli SUDAH DICABUT.");
+        break;
+      case CANCMD_SIM_OFF:
+        if (opMode == OP_CONTROLLER_SIM || opMode == OP_BATTERY_SIM) opMode = OP_OFF;
+        Serial.println("BLE SIM: simulator OFF");
+        break;
+      default: break; // CANCMD_STATUS: cukup lapor di bawah
+    }
+    reportCanStatusBle();
+  }
+}
+
+void loop() {
+  processCanCmdQueue();
+  // Cek dulu apakah ada permintaan update matrix dari BLE callback —
+  // dieksekusi DI SINI (thread loop()), bukan langsung di BLE callback,
+  // biar matrixDisp cuma disentuh dari 1 thread aja (fix race condition).
+  if (matrixUpdatePending) {
+    matrixUpdatePending = false;
+    // Satu-satunya tempat pendingMatrixText (buffer utama) ditulis -- aman,
+    // karena ini jalan di loop(), thread yang sama dengan displayAnimate().
+    strncpy(pendingMatrixText, pendingMatrixStaging, MATRIX_TEXT_BUF_LEN - 1);
+    pendingMatrixText[MATRIX_TEXT_BUF_LEN - 1] = '\0';
+    matrixOneShotActive = pendingMatrixIsOneShot;
+    showOnMatrix(pendingMatrixText);
+  }
+
+  // WAJIB dipanggil terus-menerus (setiap iterasi loop) supaya animasi
+  // scroll teks di matrix jalan mulus — gak boleh ditaruh di dalam if/
+  // interval kayak bagian BLE_SEND_INTERVAL_MS di bawah.
+  if (fxPixelDriven()) {
+    // Animasi pixel/kedip FX digambar langsung oleh serviceMatrixFx(); Parola dilewati.
+  } else if (matrixDisp.displayAnimate()) {
+    if (matrixOneShotActive) {
+      // Item rotasi dari app (MATRIX_TEXT:) sudah selesai tampil sekali --
+      // kabari app-nya supaya scheduler lanjut ke item berikutnya. bleSendLine()
+      // sendiri sudah aman dipanggil walau BLE gak konek (no-op, lihat definisinya).
+      matrixOneShotActive = false;
+      bleSendLine("MATRIX_DONE");
+    } else {
+      matrixDisp.displayReset(); // NAV_TEXT / boot text: looping terus sampai diganti
+    }
+  }
+
+  WiFiClient newClient = server.available();
+  if (newClient) handleClient(newClient);
+
+  // Non-blocking, cuma kirim frame kalau memang sudah waktunya (lihat catatan
+  // di definisi fungsinya). Aman dipanggil terus meski emulator lagi OFF.
+  serviceMidHeartbeat();
+  serviceControllerSim();
+  serviceBatterySim();
+  canToolService(); // TX berulang, auto-detect bitrate, recover bus-off
+
+  // Akumulator energi/jarak/Ah buat field MW_EFFICIENCY/MW_ENERGY/MW_AH di
+  // menu /matrix. Aman dipanggil terus setiap loop (self-throttle di dalam).
+  serviceMatrixEnergyCounters();
+
+  twai_message_t message;
+  if (twai_receive(&message, pdMS_TO_TICKS(10)) == ESP_OK) {
+    frameCount++;
+    canToolLogRx(message);
+
+    // VOTOL programming/live-data response: exactly three standard 0x3FE CAN frames.
+    // Keep frame boundaries intact; do not interpret them as one 24-byte CAN packet.
+    if (message.identifier == VOTOL_PROG_REPLY_ID &&
+        message.extd == 0 && message.data_length_code > 0 &&
+        votolLastReadAt > 0 && millis() - votolLastReadAt < 1500) {
+      uint8_t n = message.data_length_code;
+      if (n > 8) n = 8;
+      uint8_t slot = votolReplyFrames < 3 ? votolReplyFrames : 2;
+      if (votolReplyFrames < 3) {
+        memcpy(votolCanReply[slot], message.data, n);
+        votolCanReplyDlc[slot] = n;
+        votolCanReplyAt[slot] = millis();
+        votolReplyFrames++;
+        // Keep the legacy concatenated raw view for compatibility.
+        if (votolReplyLen + n <= sizeof(votolReplyBuf)) {
+          memcpy(votolReplyBuf + votolReplyLen, message.data, n);
+          votolReplyLen += n;
+          votolReplyHex = bytesToHex(votolReplyBuf, votolReplyLen);
+        }
+        Serial.printf("VOTOL READ 0x3FE #%u: %s\n",
+                      (unsigned)votolReplyFrames, bytesToHex(message.data,n).c_str());
+        if (votolReplyFrames == 3) {
+          decodeVotolCanLive();
+          Serial.printf("VOTOL LIVE: V=%.1fV I=%.1fA RPM=%d Tctrl=%dC Tmotor=%dC state=%u\n",
+                        votolCanVoltageRaw/10.0f, votolCanCurrentRaw/10.0f,
+                        (int)votolCanRpm, (int)votolCanControllerTemp,
+                        (int)votolCanMotorTemp, (unsigned)votolCanState);
+        }
+      }
+    }
+
+    if (message.identifier == 0x10261022 && !message.rtr && message.data_length_code >= 8) {
+      uint8_t b1 = message.data[1];
+      bool cruiseOn = (b1 & 0x08) != 0;
+      digitalWrite(CRUISE_LED_PIN, cruiseOn ? HIGH : LOW);
+
+      bool driveActive = (b1 & 0x01) == 0;
+      bool sideStandUp = (b1 & 0x10) == 0;
+      uint16_t speedRaw = message.data[2] | (message.data[3] << 8);
+      warningActive = driveActive && sideStandUp && (speedRaw == 0);
+
+      int modeBits = b1 & 0xC0;
+      telem.mode = (modeBits == 0xC0) ? 2 : (modeBits == 0x40 ? 1 : 0);
+      telem.park = driveActive ? 0 : 1;
+      telem.cruise = cruiseOn ? 1 : 0;
+      telem.rem = (b1 & 0x04) ? 1 : 0;
+      telem.sidestand = sideStandUp ? 0 : 1;
+      telem.speedKmh = speedRaw / 12.0;
+      // Estimasi RPM BLDC (BUKAN dari sniff CAN -- data ini memang gak ada
+      // di bus). Dihitung dari speedKmh via rasio pulley motor:roda = 1:5,
+      // ban 100/80-14. Faktor 51.45 = konstanta konversi km/h -> RPM motor
+      // buat kombinasi pulley+ban ini (lihat obrolan sebelumnya).
+      telem.rpm = (telem.speedKmh >= 0) ? (telem.speedKmh * 51.45f) : -1.0f;
+      telem.tinv = message.data[4];
+      telem.tmot = message.data[5];
+      int16_t torque = (int16_t)(message.data[6] | (message.data[7] << 8));
+      telem.torqueRaw = torque;
+
+      // Tone SFX cuma dibunyikan sekali saat state BERUBAH (edge detection),
+      // bukan tiap kali frame CAN ini diterima (bisa berkali-kali per detik).
+      static int lastCruise = -1, lastSidestand = -1;
+      static bool lastWarning = false;
+      if (lastCruise != telem.cruise) {
+        if (lastCruise != -1) playTone(cruiseOn ? DF_TRACK_CRUISE_ON : DF_TRACK_CRUISE_OFF);
+        lastCruise = telem.cruise;
+      }
+      if (lastSidestand != telem.sidestand) {
+        if (lastSidestand != -1 && telem.sidestand == 1) playTone(DF_TRACK_SIDESTAND);
+        lastSidestand = telem.sidestand;
+      }
+      if (warningActive && !lastWarning) playTone(DF_TRACK_ALARM_MOVE);
+      lastWarning = warningActive;
+    }
+
+    if (message.identifier == 0x10261023 && !message.rtr && message.data_length_code >= 8) {
+      telem.throttlePct = message.data[2];
+    }
+
+    if ((message.identifier == 0x10261100 || message.identifier == 0x10261200)
+        && !message.rtr && message.data_length_code >= 6) {
+      telem.soc  = message.data[1];
+      telem.soh  = message.data[2];
+      telem.tbat = message.data[3];
+      telem.vbat = message.data[4];
+      telem.ibat = (int8_t)message.data[5];
+    }
+
+    if (message.identifier == 0x10261202 && !message.rtr && message.data_length_code >= 7) {
+      telem.cbat = message.data[6];
+    }
+
+    if (sseClientActive) {
+      if (sseClient.connected()) {
+        String json = frameToJson(message);
+        sseClient.print("data: ");
+        sseClient.print(json);
+        sseClient.print("\n\n");
+      } else {
+        sseClientActive = false;
+        Serial.println("SSE client disconnected.");
+      }
+    }
+  }
+
+  // Refresh Matrix WEB SETELAH parser CAN dijalankan, biar nilai terbaru
+  // langsung dibandingkan dengan nilai terakhir yang tampil di Matrix.
+  serviceMatrixWebDisplay();
+  serviceMatrixFx();
+
+  static uint32_t lastBlinkToggle = 0;
+  static bool blinkState = false;
+  if (warningActive) {
+    if (millis() - lastBlinkToggle >= WARNING_BLINK_MS) {
+      lastBlinkToggle = millis();
+      blinkState = !blinkState;
+      digitalWrite(WARNING_PIN, blinkState ? HIGH : LOW);
+    }
+  } else if (blinkState) {
+    blinkState = false;
+    digitalWrite(WARNING_PIN, LOW);
+  }
+
+  static uint32_t lastBleSend = 0;
+  static int bleFieldIndex = 0;
+  const uint32_t BLE_SEND_INTERVAL_MS = 80;
+
+  if (bleClientConnected && millis() - lastBleSend >= BLE_SEND_INTERVAL_MS) {
+    lastBleSend = millis();
+    String line = "";
+
+    switch (bleFieldIndex) {
+      case 0:  if (telem.speedKmh   >= 0) line = "SPD="  + String(telem.speedKmh, 1); break;
+      case 1:  if (telem.soc        >= 0) line = "SOC="  + String((int)telem.soc); break;
+      case 2:  if (telem.soh        >= 0) line = "SOH="  + String((int)telem.soh); break;
+      case 3:  if (telem.tbat       >= 0) line = "TBAT=" + String((int)telem.tbat); break;
+      case 4:  if (telem.vbat       >= 0) line = "VBAT=" + String((int)telem.vbat); break;
+      case 5:  if (telem.ibat       >= -128) line = "IBAT=" + String((int)telem.ibat); break;
+      case 6:  if (telem.cbat       >= 0) line = "CBAT=" + String((int)telem.cbat); break;
+      case 7:  if (telem.tinv       >= 0) line = "TINV=" + String((int)telem.tinv); break;
+      case 8:  if (telem.tmot       >= 0) line = "TMOT=" + String((int)telem.tmot); break;
+      case 9:  if (telem.throttlePct>= 0) line = "TRT="  + String((int)telem.throttlePct); break;
+      case 10: if (telem.mode       >= 0) line = "MODE=" + String(telem.mode); break;
+      case 11: if (telem.park       >= 0) line = "PARK=" + String(telem.park); break;
+      case 12: if (telem.cruise     >= 0) line = "CRZ="  + String(telem.cruise); break;
+      case 13: if (telem.rem        >= 0) line = "REM="  + String(telem.rem); break;
+      case 14: if (telem.sidestand  >= 0) line = "STD="  + String(telem.sidestand); break;
+      case 15: line = String("CANMODE=") + (listenOnlyMode ? "0" : "1"); break;
+      case 16: line = String("MIDEMU=")  + (opMode == OP_MID ? "1" : "0"); break;
+      case 17: line = String("SIMMODE=") + String((int)opMode); break;
+    }
+    bleFieldIndex = (bleFieldIndex + 1) % 18;
+
+    if (line.length() > 0) {
+      line += "\r\n";
+      bleTxChar->setValue((uint8_t*)line.c_str(), line.length());
+      bleTxChar->notify();
+    }
+  }
+
+  static uint32_t lastPrint = 0;
+  if (millis() - lastPrint > 5000) {
+    lastPrint = millis();
+    Serial.print("Frames total: ");
+    Serial.print(frameCount);
+    Serial.print(" | SSE client: ");
+    Serial.println(sseClientActive ? "connected" : "none");
+  }
+}
