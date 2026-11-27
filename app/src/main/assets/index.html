@@ -1581,6 +1581,15 @@ body.nav-fullscreen .nav-searchbar{left:56px}
 .modal-btn{font-size:14px;font-weight:600;color:var(--green);cursor:pointer;background:none;border:none;font-family:'Inter',sans-serif;padding:4px 0}
 .modal-btn.cancel{color:var(--muted)}
 .modal-btn.primary{background:var(--green);color:#000;border-radius:10px;padding:10px 20px;font-size:14px}
+.apk-dl-overlay{z-index:260;align-items:center;padding:20px;background:rgba(0,0,0,.84);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.apk-dl-dialog{border-radius:20px;padding:20px 18px 18px;max-width:380px;border:1.5px solid rgba(255,193,7,.45);box-shadow:0 20px 56px rgba(0,0,0,.62),0 0 0 1px rgba(255,193,7,.12)}
+.apk-dl-warn{display:flex;align-items:flex-start;gap:10px;background:rgba(255,193,7,.11);border:1px solid rgba(255,193,7,.32);border-radius:12px;padding:10px 12px;margin-bottom:14px}
+.apk-dl-warn-ico{font-size:20px;line-height:1.1;flex-shrink:0}
+.apk-dl-warn-title{font-size:13px;font-weight:800;color:var(--warning);margin-bottom:2px}
+.apk-dl-warn-desc{font-size:11.5px;line-height:1.45;color:var(--text)}
+.apk-dl-progress-track{height:10px;border-radius:999px;background:var(--card2,var(--bg3));border:1px solid var(--border);overflow:hidden;margin:8px 0 6px}
+.apk-dl-progress-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#29b6f6,#00e5ff);transition:width .25s ease,background .25s ease}
+.apk-dl-progress-fill.done{background:linear-gradient(90deg,var(--green),#69f0ae)}
 .uuid-field{margin-bottom:9px}
 .uuid-field label{font-size:10px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:4px}
 .uuid-field input,.token-field input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:9px 11px;color:var(--text);font-size:12px;font-family:monospace;outline:none}
@@ -7109,18 +7118,55 @@ async function _loadCloudflareWebStats(){
 // Flag: lagi proses download+install APK, biar gak dobel-trigger kalau
 // user ketuk-ketuk menu Aplikasi berkali-kali pas nunggu download.
 let _apkDownloading = false;
+let _apkDownloadPct = 0;
+let _apkProgressHideTimer = null;
 
-function setApkProgressVisible(visible){
+function setApkProgressVisible(visible, statusText){
+  if(_apkProgressHideTimer){
+    clearTimeout(_apkProgressHideTimer);
+    _apkProgressHideTimer = null;
+  }
   const wrap = document.getElementById('akunApkProgressWrap');
   if(wrap) wrap.style.display = visible ? '' : 'none';
-  if(!visible) setApkProgressPct(0);
+  const modal = document.getElementById('apkDownloadModal');
+  if(modal) modal.classList.toggle('show', !!visible);
+  if(visible){
+    const info = getInstalledAppVersionInfo();
+    const curEl = document.getElementById('apkModalInstalled');
+    const verEl = document.getElementById('apkModalVersion');
+    const stEl  = document.getElementById('apkModalStatus');
+    const barEl = document.getElementById('apkModalProgressBar');
+    if(curEl) curEl.textContent = 'v' + info.version;
+    if(verEl) verEl.textContent = _nativeAppUpdate.latestVersion ? ('v' + _nativeAppUpdate.latestVersion) : 'Versi Terbaru';
+    if(stEl && statusText) stEl.textContent = statusText;
+    if(barEl) barEl.classList.remove('done');
+  } else {
+    setApkProgressPct(0);
+  }
 }
-function setApkProgressPct(pct){
+function setApkProgressPct(pct, statusText){
   pct = Math.max(0, Math.min(100, Math.round(pct)));
+  _apkDownloadPct = pct;
   const bar = document.getElementById('akunApkProgressBar');
   const lbl = document.getElementById('akunApkProgressPct');
   if(bar) bar.style.width = pct+'%';
   if(lbl) lbl.textContent = pct+'%';
+
+  const mBar = document.getElementById('apkModalProgressBar');
+  const mLbl = document.getElementById('apkModalProgressPct');
+  const mSt  = document.getElementById('apkModalStatus');
+  if(mBar){
+    mBar.style.width = pct+'%';
+    mBar.classList.toggle('done', pct >= 100);
+  }
+  if(mLbl) mLbl.textContent = pct+'%';
+  if(mSt){
+    if(statusText) mSt.textContent = statusText;
+    else if(pct >= 100) mSt.textContent = '✅ Unduhan selesai! Menyiapkan pemasangan…';
+    else if(pct > 0) mSt.textContent = 'Mengunduh paket APK…';
+    else mSt.textContent = 'Menyiapkan unduhan…';
+  }
+  if(_apkDownloading) updatePintasanUpdateSub();
 }
 
 // ── Toggle accordion "Fitur Khusus (Developer)" di Home ──
@@ -7152,21 +7198,23 @@ document.addEventListener('DOMContentLoaded', ()=>{
 function startApkDownloadNow(){
   if(!_nativeAppUpdate.available || !_nativeAppUpdate.downloadUrl) return;
   if(_apkDownloading){
+    setApkProgressVisible(true);
+    setApkProgressPct(_apkDownloadPct);
     showToast('⬇️ Masih mengunduh update, tunggu sebentar...');
     return;
   }
   if(typeof Android !== 'undefined' && typeof Android.downloadAndInstallApk === 'function'){
     _apkDownloading = true;
+    setApkProgressVisible(true, 'Memulai unduhan APK…');
+    setApkProgressPct(0, 'Memulai unduhan APK…');
     updatePintasanUpdateSub();
-    setApkProgressVisible(true);
-    setApkProgressPct(0);
     showToast('⬇️ Mengunduh versi '+_nativeAppUpdate.latestVersion+'...');
     try{
       Android.downloadAndInstallApk(_nativeAppUpdate.downloadUrl);
     }catch(e){
       _apkDownloading = false;
-      updatePintasanUpdateSub();
       setApkProgressVisible(false);
+      updatePintasanUpdateSub();
       showToast('⚠️ Gagal mulai download: '+e.message);
     }
   } else {
@@ -7179,6 +7227,8 @@ function startApkDownloadNow(){
 function handleAplikasiStripTap(){
   if(IS_NATIVE_ANDROID){
     if(_apkDownloading){
+      setApkProgressVisible(true);
+      setApkProgressPct(_apkDownloadPct);
       showToast('⬇️ Masih mengunduh update, tunggu sebentar...');
       return;
     }
@@ -7197,8 +7247,10 @@ function handleAplikasiStripTap(){
 
 // ── Callback dari native (MainActivity.java) soal status download APK ──
 window.onApkDownloadStarted = function(){
-  setApkProgressVisible(true);
-  setApkProgressPct(0);
+  _apkDownloading = true;
+  setApkProgressVisible(true, 'Menghubungkan ke server unduhan…');
+  setApkProgressPct(0, 'Menghubungkan ke server unduhan…');
+  updatePintasanUpdateSub();
 };
 window.onApkDownloadProgress = function(pct){
   // Dipanggil berkali-kali (polling ~400ms dari sisi native) selama
@@ -7207,14 +7259,15 @@ window.onApkDownloadProgress = function(pct){
 };
 window.onApkDownloadComplete = function(){
   _apkDownloading = false;
-  setApkProgressPct(100);
-  setTimeout(()=>setApkProgressVisible(false), 900);
+  setApkProgressPct(100, '✅ Unduhan selesai! Membuka installer Android…');
+  updatePintasanUpdateSub();
+  _apkProgressHideTimer = setTimeout(()=>setApkProgressVisible(false), 900);
   showToast('✅ Update terunduh, membuka installer...');
 };
 window.onApkDownloadFailed = function(reason){
   _apkDownloading = false;
-  updatePintasanUpdateSub();
   setApkProgressVisible(false);
+  updatePintasanUpdateSub();
   if(reason === 'permission'){
     // Toast detail udah ditampilin dari sisi native (minta user aktifin
     // izin "Install aplikasi tidak dikenal" di Setelan).
@@ -7225,6 +7278,7 @@ window.onApkDownloadFailed = function(reason){
 window.onApkInstallConflict = function(reason, curSig, apkSig, curVc, apkVc){
   _apkDownloading = false;
   setApkProgressVisible(false);
+  updatePintasanUpdateSub();
   const msgEl = document.getElementById('apkConflictDesc');
   const metaEl = document.getElementById('apkConflictMeta');
   if(msgEl){
@@ -7289,8 +7343,8 @@ async function downloadApk(){
   // 100%, baru file disimpan sekali jadi lewat Blob — jadi gak pernah ada
   // status "nyangkut", karena penyimpanan file blob lokal itu instan.
   _apkDownloading = true;
-  setApkProgressVisible(true);
-  setApkProgressPct(0);
+  setApkProgressVisible(true, 'Menghubungkan ke server unduhan…');
+  setApkProgressPct(0, 'Menghubungkan ke server unduhan…');
   try{
     const res = await fetch(url);
     if(!res.ok || !res.body) throw new Error('HTTP '+res.status);
@@ -7317,8 +7371,8 @@ async function downloadApk(){
     a.click();
     document.body.removeChild(a);
     setTimeout(()=>URL.revokeObjectURL(blobUrl), 30000);
-    setApkProgressPct(100);
-    setTimeout(()=>setApkProgressVisible(false), 900);
+    setApkProgressPct(100, '✅ APK selesai diunduh — cek folder Download');
+    _apkProgressHideTimer = setTimeout(()=>setApkProgressVisible(false), 900);
     showToast('✅ APK selesai diunduh — cek folder Download');
     _apkDownloading = false;
   }catch(e){
@@ -9085,7 +9139,10 @@ function updatePintasanUpdateSub(){
   const banner = document.getElementById('updateBanner');
 
   if(sub){
-    if(IS_NATIVE_ANDROID){
+    if(_apkDownloading){
+      sub.textContent = `⬇️ Mengunduh update (${_apkDownloadPct}%)…`;
+      sub.style.color = '#29b6f6';
+    }else if(IS_NATIVE_ANDROID){
       if(!_nativeAppUpdate.checked){
         sub.textContent = `Terpasang ${verLabel} · Ketuk cek update`;
         sub.style.color = 'var(--muted)';
@@ -9104,7 +9161,10 @@ function updatePintasanUpdateSub(){
   }
   const stripApp = document.getElementById('akunStripApp');
   if(stripApp){
-    if(IS_NATIVE_ANDROID){
+    if(_apkDownloading){
+      stripApp.textContent = `Unduh ${_apkDownloadPct}%`;
+      stripApp.style.color = '#29b6f6';
+    }else if(IS_NATIVE_ANDROID){
       if(!_nativeAppUpdate.checked){
         stripApp.textContent = verLabel;
         stripApp.style.color = 'var(--muted)';
@@ -29350,6 +29410,37 @@ function renderFuelSavings(){
       <button class="modal-btn cancel" onclick="deferAppUpdate()">Nanti</button>
       <button class="modal-btn primary" onclick="startUpdateFromDialog()">⬇️ Update Sekarang</button>
     </div>
+  </div>
+</div>
+
+<!-- ══ DIALOG PERINGATAN & PROGRES DOWNLOAD APK (BLOCKING) ══ -->
+<div class="modal-overlay apk-dl-overlay" id="apkDownloadModal" role="dialog" aria-modal="true" aria-labelledby="apkModalTitle">
+  <div class="modal apk-dl-dialog">
+    <div class="apk-dl-warn">
+      <div class="apk-dl-warn-ico" aria-hidden="true">⚠️</div>
+      <div>
+        <div class="apk-dl-warn-title" id="apkModalTitle">Sedang Mengunduh Pembaruan</div>
+        <div class="apk-dl-warn-desc">Mohon tunggu dan <b>jangan tutup aplikasi</b> hingga proses unduhan selesai agar pemasangan tidak terganggu.</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:7px 10px">
+        <div style="font-size:10px;color:var(--muted)">Terpasang</div>
+        <div id="apkModalInstalled" style="font-size:12.5px;font-weight:700;color:var(--text);margin-top:1px">—</div>
+      </div>
+      <div style="flex:1;background:rgba(41,182,246,.1);border:1px solid rgba(41,182,246,.35);border-radius:10px;padding:7px 10px">
+        <div style="font-size:10px;color:var(--muted)">Mengunduh versi</div>
+        <div id="apkModalVersion" style="font-size:12.5px;font-weight:800;color:#29b6f6;margin-top:1px">Versi Baru</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div id="apkModalStatus" style="font-size:12px;font-weight:600;color:var(--text)">Menyiapkan unduhan…</div>
+      <div id="apkModalProgressPct" style="font-size:14px;font-weight:800;color:#29b6f6;flex-shrink:0">0%</div>
+    </div>
+    <div class="apk-dl-progress-track">
+      <div id="apkModalProgressBar" class="apk-dl-progress-fill"></div>
+    </div>
+    <div style="font-size:10.5px;color:var(--muted);text-align:center;margin-top:6px">Installer Android akan terbuka otomatis setelah selesai.</div>
   </div>
 </div>
 
