@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.35",
-  "versionCode": 16,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.35/GesitsDashboard-v1.0.1.35-vc16-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.35",
-  "notes": "- feat: add ESP32 CAN sniffer firmware source"
+  "version": "1.0.1.36",
+  "versionCode": 17,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.36/GesitsDashboard-v1.0.1.36-vc17-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.36",
+  "notes": "- feat(esp32): add Gesits CAN monitoring firmware"
 }
