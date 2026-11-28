@@ -25,6 +25,9 @@ import android.media.MediaRecorder;
 import android.util.Base64;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -160,6 +163,7 @@ public class MainActivity extends Activity {
         .followRedirects(true)
         .followSslRedirects(true)
         .build();
+    private volatile boolean esp32WifiBound = false;
 
     // ══════════════════════════════════════════════
     // SERVICE CONNECTION
@@ -1821,7 +1825,124 @@ public class MainActivity extends Activity {
             }, "CloudflareAnalyticsFetch").start();
         }
 
+        // Ikat proses app sementara ke jaringan Wi-Fi aktif (mis. AP "Gesits CAN"
+        // tanpa internet) supaya 192.168.4.1 tidak dialihkan ke data seluler.
+        @JavascriptInterface
+        public String bindEsp32Wifi(final boolean enable) {
+            return applyEsp32WifiBinding(enable);
+        }
+
+        // Request GET HTTP langsung ke http://192.168.4.1<path> lewat SocketFactory
+        // milik interface Wi-Fi aktif (menembus routing seluler & CORS WebView).
+        @JavascriptInterface
+        public void esp32WifiGet(final String requestId, final String path) {
+            if (requestId == null || requestId.trim().isEmpty()) return;
+            final String cleanPath = (path == null || !path.startsWith("/") || path.contains(" ")
+                || path.contains("\r") || path.contains("\n")) ? "" : path;
+            if (cleanPath.isEmpty()) {
+                deliverEsp32WifiResult(requestId, false, 400, "Path ESP32 tidak valid");
+                return;
+            }
+            new Thread(() -> {
+                Response response = null;
+                try {
+                    Network wifiNet = findActiveWifiNetwork();
+                    if (wifiNet == null) {
+                        deliverEsp32WifiResult(requestId, false, 0,
+                            "Wi-Fi tidak aktif. Sambungkan HP ke AP \"Gesits CAN\" (12345678).");
+                        return;
+                    }
+                    OkHttpClient wifiClient = syncHttpClient.newBuilder()
+                        .socketFactory(wifiNet.getSocketFactory())
+                        .connectTimeout(2500, TimeUnit.MILLISECONDS)
+                        .readTimeout(4500, TimeUnit.MILLISECONDS)
+                        .writeTimeout(3000, TimeUnit.MILLISECONDS)
+                        .retryOnConnectionFailure(false)
+                        .build();
+                    Request req = new Request.Builder()
+                        .url("http://192.168.4.1" + cleanPath)
+                        .header("Connection", "close")
+                        .header("Cache-Control", "no-store")
+                        .build();
+                    response = wifiClient.newCall(req).execute();
+                    int code = response.code();
+                    ResponseBody body = response.body();
+                    String txt = "";
+                    if (body != null) {
+                        InputStream is = body.byteStream();
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        byte[] buf = new byte[4096];
+                        int r;
+                        int total = 0;
+                        while ((r = is.read(buf)) != -1) {
+                            total += r;
+                            if (total > 512 * 1024) break;
+                            baos.write(buf, 0, r);
+                        }
+                        txt = baos.toString("UTF-8");
+                    }
+                    deliverEsp32WifiResult(requestId, response.isSuccessful(), code, txt);
+                } catch (Exception e) {
+                    deliverEsp32WifiResult(requestId, false, 0,
+                        e.getMessage() != null ? e.getMessage() : "Gagal menghubungi 192.168.4.1");
+                } finally {
+                    if (response != null) {
+                        try { response.close(); } catch (Exception ignored) {}
+                    }
+                }
+            }, "Esp32WifiHttp").start();
+        }
+
     } // ← TUTUP JsBridge
+
+    private Network findActiveWifiNetwork() {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return null;
+            for (Network net : cm.getAllNetworks()) {
+                NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+                if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                    return net;
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private String applyEsp32WifiBinding(boolean enable) {
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return "no_cm";
+            if (!enable) {
+                cm.bindProcessToNetwork(null);
+                esp32WifiBound = false;
+                return "unbound";
+            }
+            Network wifiNet = findActiveWifiNetwork();
+            if (wifiNet == null) {
+                esp32WifiBound = false;
+                return "no_wifi";
+            }
+            boolean ok = cm.bindProcessToNetwork(wifiNet);
+            esp32WifiBound = ok;
+            return ok ? "bound" : "failed";
+        } catch (Exception e) {
+            esp32WifiBound = false;
+            return "error";
+        }
+    }
+
+    private void deliverEsp32WifiResult(String requestId, boolean ok, int status, String payload) {
+        runOnUiThread(() -> {
+            if (webView == null) return;
+            String js = "window.__onEsp32WifiDone && window.__onEsp32WifiDone("
+                + JSONObject.quote(requestId) + ","
+                + ok + ","
+                + status + ","
+                + JSONObject.quote(payload != null ? payload : "") + ")";
+            webView.evaluateJavascript(js, null);
+        });
+    }
 
     private void deliverNativeFetchResult(String requestId, boolean ok, int status, String etag, String errorMsg) {
         runOnUiThread(() -> {
@@ -2882,6 +3003,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (esp32WifiBound) {
+            applyEsp32WifiBinding(false);
+        }
         NativeMapStreamer.setGpsSink(null);
         webViewRef = null;
         fetchedPayloads.clear();

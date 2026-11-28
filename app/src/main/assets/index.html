@@ -3658,12 +3658,15 @@ function motoImgFallback(img){
         </details>
         <div id="b2SimSendStatus" style="font-size:10px;color:var(--muted);margin-top:8px">Nilai yang tidak diubah tetap memakai nilai terakhir di ESP32. Berlaku saat emulator terkait aktif.</div>
       </div>
-      <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(94,230,160,.28);border-radius:12px;background:rgba(94,230,160,.05);display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(94,230,160,.28);border-radius:12px;background:rgba(94,230,160,.05);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <div>
-          <div style="font-size:11px;font-weight:800;color:var(--text)">📡 Firmware &amp; Update OTA</div>
+          <div style="font-size:11px;font-weight:800;color:var(--text)">📡 ESP32 CAN &amp; Firmware OTA</div>
           <div style="font-size:10px;color:var(--muted)">Versi ESP32: <b id="b2FwVerText" style="color:var(--text)">—</b></div>
         </div>
-        <button type="button" onclick="openEsp32PairModal()" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(94,230,160,.45);background:rgba(94,230,160,.12);color:var(--green);font-weight:800;font-size:11px;cursor:pointer">KELOLA OTA &rarr;</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button type="button" onclick="openEsp32DashModal()" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(41,182,246,.45);background:rgba(41,182,246,.12);color:#29b6f6;font-weight:800;font-size:11px;cursor:pointer">📡 DASHBOARD</button>
+          <button type="button" onclick="openEsp32PairModal()" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(94,230,160,.45);background:rgba(94,230,160,.12);color:var(--green);font-weight:800;font-size:11px;cursor:pointer">KELOLA OTA &rarr;</button>
+        </div>
       </div>
         </div>
       </details>
@@ -5822,10 +5825,100 @@ function statsSvgIcon(name){
       <button class="modal-btn cancel" onclick="esp32ForgetAndReconnect()" style="color:var(--warning);border-color:rgba(255,167,38,.4)">🧹 Lupakan Cache &amp; Sambung Ulang</button>
       <button class="modal-btn cancel" id="esp32DisconnectBtn" onclick="esp32Disconnect()" style="display:none">Putuskan Koneksi</button>
       <button class="modal-btn cancel" onclick="closeModal('esp32PairModal');showDevLog()" style="color:#29b6f6;border-color:#29b6f6">📋 Lihat Log Mentah (debug)</button>
-      <button class="modal-btn cancel" type="button" onclick="openEsp32DashboardWeb()" style="color:var(--green);border-color:rgba(var(--green-rgb),.45)">🌐 Buka Web ESP32 (192.168.4.1)</button>
+      <button class="modal-btn cancel" type="button" onclick="closeModal('esp32PairModal');openEsp32DashModal()" style="color:#29b6f6;border-color:rgba(41,182,246,.5);background:rgba(41,182,246,.10)">📡 Dashboard ESP32 (In-App)</button>
+      <button class="modal-btn cancel" type="button" onclick="openEsp32DashboardWeb()" style="color:var(--green);border-color:rgba(var(--green-rgb),.45)">🌐 Buka Web ESP32 di Browser</button>
       <button class="modal-btn cancel" onclick="closeModal('esp32PairModal')">TUTUP</button>
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:8px">Pakai "Lupakan Cache" kalau habis update firmware ESP32 dan tombol kontak di Home gak berfungsi meski status di sini "Terhubung" — ini bersihkan cache characteristic lama yg tersimpan di HP/browser.</p>
+  </div>
+</div>
+
+<!-- MODAL: Dashboard ESP32 CAN Ringkas (In-App) -->
+<div class="modal-overlay" id="esp32DashModal" onclick="if(event.target===this)closeEsp32DashModal()">
+  <div class="modal" style="max-width:460px;max-height:86vh;overflow-y:auto;text-align:left">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px">
+      <h3 style="margin:0;font-size:16px">📡 Dashboard ESP32 CAN</h3>
+      <span id="e3dFwBadge" style="font-size:10px;font-weight:800;padding:3px 8px;border-radius:99px;background:rgba(94,230,160,.12);border:1px solid rgba(94,230,160,.35);color:var(--green)">FW: —</span>
+    </div>
+    <div id="e3dBanner" style="font-size:11px;color:var(--warning);background:rgba(255,167,38,.10);border:1px solid rgba(255,167,38,.35);border-radius:10px;padding:8px 10px;margin-bottom:10px;line-height:1.4">
+      Menghubungkan ke <code>192.168.4.1</code>... Pastikan Wi-Fi HP terhubung ke <b>Gesits CAN</b> (sandi <code>12345678</code>). Jika di browser gagal, matikan <b>Data Seluler</b> sementara.
+    </div>
+
+    <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;font-size:11px;margin-bottom:9px">
+        <div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding-bottom:3px"><span style="color:var(--muted)">Bitrate</span><b id="e3dBaud">—</b></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding-bottom:3px"><span style="color:var(--muted)">Mode</span><b id="e3dMode">—</b></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding-bottom:3px"><span style="color:var(--muted)">Bus State</span><b id="e3dState">—</b></div>
+        <div style="display:flex;justify-content:space-between;border-bottom:1px dashed var(--border);padding-bottom:3px"><span style="color:var(--muted)">TEC/REC/Err</span><b id="e3dErr">—</b></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <button id="e3dBtnListen" type="button" class="modal-btn cancel" onclick="e3dSetMode('listen')" style="margin:0;padding:8px 6px;font-size:11px">LISTEN (Pasif)</button>
+        <button id="e3dBtnNormal" type="button" class="modal-btn cancel" onclick="e3dSetMode('normal')" style="margin:0;padding:8px 6px;font-size:11px">NORMAL (ACK + TX)</button>
+        <button id="e3dBtnMidOn" type="button" class="modal-btn cancel" onclick="e3dSendAction('/mid/on','MID Emulator ON')" style="margin:0;padding:8px 6px;font-size:11px">MID EMULATE: ON</button>
+        <button id="e3dBtnMidOff" type="button" class="modal-btn cancel" onclick="e3dSendAction('/mid/off','MID Emulator OFF')" style="margin:0;padding:8px 6px;font-size:11px">MID EMULATE: OFF</button>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:8px">
+        <select id="e3dBaudSel" style="flex:1;padding:7px 8px;border-radius:8px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:11px">
+          <option value="1000000">1 Mbps</option>
+          <option value="800000">800 kbps</option>
+          <option value="500000">500 kbps</option>
+          <option value="250000" selected>250 kbps</option>
+          <option value="125000">125 kbps</option>
+          <option value="100000">100 kbps</option>
+          <option value="50000">50 kbps</option>
+        </select>
+        <button type="button" class="modal-btn" onclick="e3dApplyBaud()" style="margin:0;width:auto;padding:7px 10px;font-size:11px">Terapkan</button>
+        <button type="button" class="modal-btn cancel" onclick="e3dAutoDetect()" style="margin:0;width:auto;padding:7px 10px;font-size:11px;color:var(--warning);border-color:rgba(255,167,38,.45)">Auto-Detect</button>
+      </div>
+      <div id="e3dAbText" style="font-size:10px;color:var(--muted);margin-top:5px;display:none"></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+      <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:9px;font-size:11px">
+        <div style="font-weight:800;margin-bottom:5px;color:var(--green)">🔋 Baterai <span id="e3dBSrc" style="color:var(--muted);font-weight:600">(—)</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--muted)">SOC / SOH</span><b id="e3dBSoc" style="font-family:monospace">—</b></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--muted)">Volt / Arus</span><b id="e3dBVI" style="font-family:monospace">—</b></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Suhu / Cycle</span><b id="e3dBTC" style="font-family:monospace">—</b></div>
+      </div>
+      <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:9px;font-size:11px">
+        <div style="font-weight:800;margin-bottom:5px;color:#29b6f6">⚡ Kontroler</div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--muted)">Speed</span><b id="e3dMSpd" style="font-family:monospace">—</b></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--muted)">Throt / Trq</span><b id="e3dMTrt" style="font-family:monospace">—</b></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed var(--border)"><span style="color:var(--muted)">Suhu I / M</span><b id="e3dMTmp" style="font-family:monospace">—</b></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--muted)">Status</span><b id="e3dMFlg" style="font-family:monospace">—</b></div>
+      </div>
+    </div>
+
+    <div style="background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:9px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:7px;font-size:11px">
+        <span>Frame: <b id="e3dTot">0</b> · Unik: <b id="e3dUniq">0</b></span>
+        <div style="display:flex;gap:5px">
+          <button id="e3dPauseBtn" type="button" class="modal-btn cancel" onclick="e3dTogglePause()" style="margin:0;width:auto;padding:5px 8px;font-size:10px">⏸ Pause</button>
+          <button type="button" class="modal-btn cancel" onclick="e3dClearFrames()" style="margin:0;width:auto;padding:5px 8px;font-size:10px">🗑 Clear</button>
+          <button type="button" class="modal-btn cancel" onclick="e3dDownloadCsv()" style="margin:0;width:auto;padding:5px 8px;font-size:10px;color:var(--green);border-color:rgba(var(--green-rgb),.45)">📥 CSV</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;max-height:190px;overflow-y:auto">
+        <table style="width:100%;border-collapse:collapse;font:11px ui-monospace,monospace">
+          <thead>
+            <tr style="color:var(--muted);text-align:left;border-bottom:1px solid var(--border)">
+              <th style="padding:4px 4px">ID</th>
+              <th style="padding:4px 4px">Info</th>
+              <th style="padding:4px 4px">Data (hex)</th>
+              <th style="padding:4px 4px;text-align:right">n</th>
+            </tr>
+          </thead>
+          <tbody id="e3dTbody">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:14px">Menunggu frame CAN...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="modal-actions" style="gap:8px">
+      <button class="modal-btn cancel" type="button" onclick="openEsp32DashboardWeb()" style="color:#29b6f6;border-color:rgba(41,182,246,.45)">🌐 Buka Web Penuh</button>
+      <button class="modal-btn cancel" type="button" onclick="closeEsp32DashModal()">TUTUP</button>
+    </div>
   </div>
 </div>
 
@@ -18457,15 +18550,20 @@ function _esp32SetOtaUi(msg, pct, isErr){
 
 async function _esp32ProbeApFw(){
   try{
-    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    const t = setTimeout(() => { try{ ctl && ctl.abort(); }catch(e){} }, 1500);
-    const res = await fetch('http://192.168.4.1/can/status', { cache:'no-store', signal: ctl ? ctl.signal : undefined });
-    clearTimeout(t);
-    if(res && res.ok){
-      const s = await res.json();
-      if(s && s.fw) _esp32UpdateFwUI(s.fw);
-      return s;
+    let text = '';
+    if(typeof esp32WifiFetch === 'function'){
+      text = await esp32WifiFetch('/can/status', 2200);
+    } else {
+      const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      const t = setTimeout(() => { try{ ctl && ctl.abort(); }catch(e){} }, 1800);
+      const res = await fetch('http://192.168.4.1/can/status', { cache:'no-store', signal: ctl ? ctl.signal : undefined });
+      clearTimeout(t);
+      if(!res || !res.ok) return null;
+      text = await res.text();
     }
+    const s = JSON.parse(text || '{}');
+    if(s && s.fw) _esp32UpdateFwUI(s.fw);
+    return s;
   }catch(e){}
   return null;
 }
@@ -18533,54 +18631,64 @@ async function _esp32FlashOtaBlob(fileOrBlob, fileName){
   }catch(e){}
 
   _esp32SetOtaUi('Mengecek koneksi Wi-Fi ESP32 (192.168.4.1)...', 0);
-  const st = await _esp32ProbeApFw();
-  if(!st){
-    _esp32SetOtaUi('ESP32 tidak terjangkau di 192.168.4.1. Sambungkan Wi-Fi HP ke "Gesits CAN" (12345678), matikan DATA SELULER sementara, atau klik "Web OTA".', -1, true);
-    return;
+  const canBindNative = (IS_NATIVE_ANDROID && window.Android && typeof Android.bindEsp32Wifi === 'function');
+  if(canBindNative && !_e3dOpen){
+    try{ Android.bindEsp32Wifi(true); }catch(e){}
   }
-  if(st.freeSketch && fileOrBlob.size > st.freeSketch){
-    _esp32SetOtaUi('Ukuran .bin (' + Math.round(fileOrBlob.size/1024) + ' KB) melebihi ruang OTA ESP32 (' + Math.round(st.freeSketch/1024) + ' KB).', -1, true);
-    return;
-  }
+  try{
+    const st = await _esp32ProbeApFw();
+    if(!st){
+      _esp32SetOtaUi('ESP32 tidak terjangkau di 192.168.4.1. Sambungkan Wi-Fi HP ke "Gesits CAN" (12345678), matikan DATA SELULER sementara, atau klik "Web OTA".', -1, true);
+      return;
+    }
+    if(st.freeSketch && fileOrBlob.size > st.freeSketch){
+      _esp32SetOtaUi('Ukuran .bin (' + Math.round(fileOrBlob.size/1024) + ' KB) melebihi ruang OTA ESP32 (' + Math.round(st.freeSketch/1024) + ' KB).', -1, true);
+      return;
+    }
 
-  _esp32SetOtaUi('Mengunggah ' + name + ' (' + Math.round(fileOrBlob.size/1024) + ' KB)...', 1);
-  await new Promise((resolve) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'http://192.168.4.1/ota', true);
-    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-    xhr.timeout = 90000;
-    xhr.upload.onprogress = (ev) => {
-      if(ev.lengthComputable){
-        const pct = Math.max(1, Math.round((ev.loaded / ev.total) * 100));
-        _esp32SetOtaUi('Mengirim OTA ke ESP32: ' + pct + '%', pct);
-      }
-    };
-    xhr.onload = () => {
-      try{
-        const r = JSON.parse(xhr.responseText || '{}');
-        if(xhr.status === 200 && r.ok){
-          _esp32SetOtaUi('✅ OTA berhasil! ESP32 sedang reboot (±5 detik)...', 100);
-          showToast('Firmware ESP32 berhasil diperbarui!');
-          setTimeout(() => { _esp32ProbeApFw(); }, 5500);
-          resolve(true);
-          return;
+    _esp32SetOtaUi('Mengunggah ' + name + ' (' + Math.round(fileOrBlob.size/1024) + ' KB)...', 1);
+    await new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'http://192.168.4.1/ota', true);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.timeout = 90000;
+      xhr.upload.onprogress = (ev) => {
+        if(ev.lengthComputable){
+          const pct = Math.max(1, Math.round((ev.loaded / ev.total) * 100));
+          _esp32SetOtaUi('Mengirim OTA ke ESP32: ' + pct + '%', pct);
         }
-        _esp32SetOtaUi('OTA gagal: ' + (r.err || xhr.statusText || ('HTTP ' + xhr.status)), -1, true);
-      }catch(e){
-        _esp32SetOtaUi('Respon OTA error (HTTP ' + xhr.status + ')', -1, true);
-      }
-      resolve(false);
-    };
-    xhr.onerror = () => {
-      _esp32SetOtaUi('Koneksi ke 192.168.4.1 terputus. Coba buka "Web OTA" di browser.', -1, true);
-      resolve(false);
-    };
-    xhr.ontimeout = () => {
-      _esp32SetOtaUi('Timeout upload OTA ke ESP32.', -1, true);
-      resolve(false);
-    };
-    xhr.send(fileOrBlob);
-  });
+      };
+      xhr.onload = () => {
+        try{
+          const r = JSON.parse(xhr.responseText || '{}');
+          if(xhr.status === 200 && r.ok){
+            _esp32SetOtaUi('✅ OTA berhasil! ESP32 sedang reboot (±5 detik)...', 100);
+            showToast('Firmware ESP32 berhasil diperbarui!');
+            setTimeout(() => { _esp32ProbeApFw(); }, 5500);
+            resolve(true);
+            return;
+          }
+          _esp32SetOtaUi('OTA gagal: ' + (r.err || xhr.statusText || ('HTTP ' + xhr.status)), -1, true);
+        }catch(e){
+          _esp32SetOtaUi('Respon OTA error (HTTP ' + xhr.status + ')', -1, true);
+        }
+        resolve(false);
+      };
+      xhr.onerror = () => {
+        _esp32SetOtaUi('Koneksi ke 192.168.4.1 terputus. Coba buka "Web OTA" di browser.', -1, true);
+        resolve(false);
+      };
+      xhr.ontimeout = () => {
+        _esp32SetOtaUi('Timeout upload OTA ke ESP32.', -1, true);
+        resolve(false);
+      };
+      xhr.send(fileOrBlob);
+    });
+  } finally {
+    if(canBindNative && !_e3dOpen){
+      try{ Android.bindEsp32Wifi(false); }catch(e){}
+    }
+  }
 }
 
 function _esp32OnOtaFileSelected(input){
@@ -25384,7 +25492,11 @@ function switchDiagTab(t){
   if(t==='battery'){ setTimeout(renderTrendCharts,60); renderBmsPanel(); renderBattery2(); switchBatterySource(1); }
   if(t==='stats'){ setTimeout(()=>{renderLiveEfficiencyGraph();renderHillAnalyzer();renderPredCard();},80); }
 }
-function closeModal(id){document.getElementById(id).classList.remove('show');}
+function closeModal(id){
+  const el = document.getElementById(id);
+  if(el) el.classList.remove('show');
+  if(id === 'esp32DashModal' && typeof _e3dCleanup === 'function') _e3dCleanup();
+}
 
 // ═══════════════════════════════════════════
 // ERROR STATUS SCREEN
@@ -30686,8 +30798,402 @@ function _onAppBackupFileSelected(input){
 }
 
 // ══════════════════════════════════════════════════════════
-// PINTASAN WEB DASHBOARD ESP32 (192.168.4.1)
+// DASHBOARD ESP32 CAN RINGKAS (IN-APP) + WI-FI SOCKET BRIDGE
 // ══════════════════════════════════════════════════════════
+const _esp32WifiPending = {};
+let _esp32WifiSeq = 0;
+window.__onEsp32WifiDone = function(requestId, ok, status, payload){
+  const cb = _esp32WifiPending[requestId];
+  if(!cb) return;
+  delete _esp32WifiPending[requestId];
+  clearTimeout(cb.timer);
+  if(ok) cb.resolve(payload || '');
+  else cb.reject(new Error(payload || ('HTTP ' + status)));
+};
+
+function esp32WifiFetch(path, timeoutMs){
+  const tms = timeoutMs || 4500;
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.esp32WifiGet === 'function'){
+    const reqId = 'e3w_' + (++_esp32WifiSeq);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if(_esp32WifiPending[reqId]){
+          delete _esp32WifiPending[reqId];
+          reject(new Error('Timeout menghubungi 192.168.4.1'));
+        }
+      }, tms);
+      _esp32WifiPending[reqId] = { resolve, reject, timer };
+      try{
+        Android.esp32WifiGet(reqId, path);
+      }catch(e){
+        clearTimeout(timer);
+        delete _esp32WifiPending[reqId];
+        reject(e);
+      }
+    });
+  }
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const t = setTimeout(() => { try{ ctl && ctl.abort(); }catch(e){} }, tms);
+  return fetch('http://192.168.4.1' + path, { cache:'no-store', signal: ctl ? ctl.signal : undefined })
+    .then(async (res) => {
+      clearTimeout(t);
+      if(!res.ok) throw new Error('HTTP ' + res.status);
+      return await res.text();
+    })
+    .catch((err) => { clearTimeout(t); throw err; });
+}
+
+let _e3dOpen = false;
+let _e3dPaused = false;
+let _e3dBusy = false;
+let _e3dTimer = null;
+let _e3dSeq = 0;
+let _e3dTot = 0;
+let _e3dPollCount = 0;
+let _e3dNeedStatus = true;
+let _e3dBindState = 'unknown';
+const _e3dRows = {};
+const _e3dLog = [];
+let _e3dChain = Promise.resolve();
+
+function _e3dEnqueue(fn){
+  const p = _e3dChain.then(fn, fn);
+  _e3dChain = p.catch(() => {});
+  return p;
+}
+
+function _e3dSetBanner(html, level){
+  const el = document.getElementById('e3dBanner');
+  if(!el) return;
+  el.innerHTML = html;
+  if(level === 'ok'){
+    el.style.color = 'var(--green)';
+    el.style.background = 'rgba(94,230,160,.10)';
+    el.style.borderColor = 'rgba(94,230,160,.35)';
+  } else if(level === 'err'){
+    el.style.color = 'var(--danger)';
+    el.style.background = 'rgba(255,82,82,.10)';
+    el.style.borderColor = 'rgba(255,82,82,.35)';
+  } else {
+    el.style.color = 'var(--warning)';
+    el.style.background = 'rgba(255,167,38,.10)';
+    el.style.borderColor = 'rgba(255,167,38,.35)';
+  }
+}
+
+function _e3dApplyStatus(s){
+  if(!s) return;
+  if(s.fw){
+    const fb = document.getElementById('e3dFwBadge');
+    if(fb) fb.textContent = 'FW: ' + s.fw;
+    _esp32UpdateFwUI(s.fw);
+  }
+  const elBaud = document.getElementById('e3dBaud');
+  const elMode = document.getElementById('e3dMode');
+  const elState = document.getElementById('e3dState');
+  const elErr = document.getElementById('e3dErr');
+  if(elBaud) elBaud.textContent = s.baud ? ((s.baud / 1000) + ' kbps') : '—';
+  if(elMode){
+    elMode.textContent = s.listen ? 'LISTEN (Pasif)' : 'NORMAL (ACK)';
+    elMode.style.color = s.listen ? 'var(--warning)' : 'var(--green)';
+  }
+  if(elState){
+    elState.textContent = s.state || '—';
+    elState.style.color = s.state === 'RUNNING' ? 'var(--green)' : 'var(--danger)';
+  }
+  if(elErr) elErr.textContent = (s.tec ?? '-') + ' / ' + (s.rec ?? '-') + ' / ' + (s.berr ?? '-');
+
+  const sel = document.getElementById('e3dBaudSel');
+  if(sel && s.baud && document.activeElement !== sel){
+    sel.value = String(s.baud);
+  }
+  const bL = document.getElementById('e3dBtnListen');
+  const bN = document.getElementById('e3dBtnNormal');
+  const bM1 = document.getElementById('e3dBtnMidOn');
+  const bM0 = document.getElementById('e3dBtnMidOff');
+  if(bL){
+    bL.style.borderColor = s.listen ? 'var(--warning)' : 'var(--border)';
+    bL.style.color = s.listen ? 'var(--warning)' : 'var(--text)';
+    bL.style.background = s.listen ? 'rgba(255,167,38,.12)' : 'transparent';
+  }
+  if(bN){
+    bN.style.borderColor = !s.listen ? 'var(--green)' : 'var(--border)';
+    bN.style.color = !s.listen ? 'var(--green)' : 'var(--text)';
+    bN.style.background = !s.listen ? 'rgba(var(--green-rgb),.12)' : 'transparent';
+  }
+  if(bM1){
+    bM1.style.borderColor = s.opMode === 1 ? 'var(--green)' : 'var(--border)';
+    bM1.style.color = s.opMode === 1 ? 'var(--green)' : 'var(--text)';
+    bM1.style.background = s.opMode === 1 ? 'rgba(var(--green-rgb),.12)' : 'transparent';
+  }
+  if(bM0){
+    bM0.style.borderColor = s.opMode === 0 ? '#29b6f6' : 'var(--border)';
+    bM0.style.color = s.opMode === 0 ? '#29b6f6' : 'var(--text)';
+    bM0.style.background = s.opMode === 0 ? 'rgba(41,182,246,.12)' : 'transparent';
+  }
+
+  const abEl = document.getElementById('e3dAbText');
+  if(abEl){
+    if(s.ab && s.ab.run){
+      abEl.style.display = 'block';
+      abEl.style.color = 'var(--warning)';
+      abEl.textContent = '⏳ Auto-Detect berjalan (' + ((s.ab.idx || 0) + 1) + '/7)...';
+    } else if(s.ab && s.ab.best){
+      abEl.style.display = 'block';
+      abEl.style.color = 'var(--green)';
+      abEl.textContent = '✓ Hasil Auto-Detect terakhir: ' + (s.ab.best / 1000) + ' kbps';
+    } else {
+      abEl.style.display = 'none';
+    }
+  }
+}
+
+function _e3dParseHexBytes(hexStr){
+  if(!hexStr) return [];
+  return String(hexStr).trim().split(/\s+/).filter(Boolean).map(h => parseInt(h, 16) || 0);
+}
+
+function _e3dS8(v){ return v > 127 ? v - 256 : v; }
+function _e3dS16le(a, b){ const v = a | (b << 8); return v > 32767 ? v - 65536 : v; }
+
+function _e3dDecodeFrame(idHex, flags, dlc, bytes){
+  const isRtr = (flags & 2) !== 0;
+  if(isRtr) return;
+  const id = String(idHex || '').toUpperCase();
+  if((id === '10261100' || id === '10261200') && dlc >= 6){
+    const bSrc = document.getElementById('e3dBSrc');
+    const bSoc = document.getElementById('e3dBSoc');
+    const bVI = document.getElementById('e3dBVI');
+    const bTC = document.getElementById('e3dBTC');
+    if(bSrc) bSrc.textContent = '(0x' + id + ')';
+    if(bSoc) bSoc.textContent = bytes[1] + '% / ' + bytes[2] + '%';
+    if(bVI) bVI.textContent = bytes[4] + 'V / ' + _e3dS8(bytes[5]) + 'A';
+    if(bTC){
+      const prevCyc = (bTC.textContent.split('/')[1] || '—').trim();
+      bTC.textContent = bytes[3] + '°C / ' + prevCyc;
+    }
+  } else if(id === '10261202' && dlc >= 7){
+    const bTC = document.getElementById('e3dBTC');
+    if(bTC){
+      const prevTemp = (bTC.textContent.split('/')[0] || '—').trim();
+      bTC.textContent = prevTemp + ' / ' + bytes[6] + 'x';
+    }
+  } else if(id === '10261022' && dlc >= 8){
+    const b1 = bytes[1];
+    const modeTxt = (b1 & 0xC0) === 0xC0 ? 'Sport' : ((b1 & 0x40) ? 'Urban' : 'Eco');
+    const spd = ((bytes[2] | (bytes[3] << 8)) / 12).toFixed(1);
+    const mSpd = document.getElementById('e3dMSpd');
+    const mTmp = document.getElementById('e3dMTmp');
+    const mTrt = document.getElementById('e3dMTrt');
+    const mFlg = document.getElementById('e3dMFlg');
+    if(mSpd) mSpd.textContent = spd + ' km/h (' + modeTxt + ')';
+    if(mTmp) mTmp.textContent = bytes[4] + '°C / ' + bytes[5] + '°C';
+    if(mTrt){
+      const prevThr = (mTrt.textContent.split('/')[0] || '—').trim();
+      mTrt.textContent = prevThr + ' / ' + _e3dS16le(bytes[6], bytes[7]);
+    }
+    if(mFlg){
+      mFlg.textContent = ((b1 & 1) ? 'PARK' : 'DRIVE') + ((b1 & 4) ? ' REM' : '') + ((b1 & 8) ? ' CRZ' : '') + ((b1 & 16) ? ' STD' : '');
+    }
+  } else if(id === '10261023' && dlc >= 3){
+    const mTrt = document.getElementById('e3dMTrt');
+    if(mTrt){
+      const prevTrq = (mTrt.textContent.split('/')[1] || '—').trim();
+      mTrt.textContent = bytes[2] + '% / ' + prevTrq;
+    }
+  }
+}
+
+function _e3dRenderFrames(rx){
+  if(!rx) return;
+  if(typeof rx.seq === 'number') _e3dSeq = rx.seq;
+  const list = Array.isArray(rx.f) ? rx.f : [];
+  if(!list.length) return;
+  const tb = document.getElementById('e3dTbody');
+  if(!tb) return;
+  if(Object.keys(_e3dRows).length === 0) tb.innerHTML = '';
+
+  for(const item of list){
+    const ms = item[0], id = String(item[1] || '').toUpperCase(), flags = item[2] | 0, dlc = item[3] | 0, hex = String(item[4] || '');
+    const isExt = (flags & 1) !== 0, isRtr = (flags & 2) !== 0, isTx = (flags & 4) !== 0;
+    const bytes = _e3dParseHexBytes(hex);
+    _e3dDecodeFrame(id, flags, dlc, bytes);
+    _e3dTot++;
+
+    if(_e3dLog.length > 5000) _e3dLog.shift();
+    _e3dLog.push(ms + ',0x' + id + ',' + (isExt?1:0) + ',' + dlc + ',' + (isRtr?1:0) + ',"' + hex + '"');
+
+    let row = _e3dRows[id];
+    if(!row){
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid var(--border)';
+      tr.innerHTML = '<td style="padding:4px;color:var(--green);font-weight:700"></td><td style="padding:4px;color:var(--muted)"></td><td style="padding:4px"></td><td style="padding:4px;text-align:right"></td>';
+      tb.appendChild(tr);
+      row = _e3dRows[id] = { n: 0, el: tr };
+    }
+    row.n++;
+    const c = row.el.children;
+    c[0].textContent = '0x' + id;
+    c[1].textContent = (isTx ? 'TX ' : '') + (isExt ? 'EXT' : 'STD') + '/' + dlc + (isRtr ? ' RTR' : '');
+    c[2].textContent = isRtr ? '(RTR)' : (hex || '—');
+    c[3].textContent = row.n;
+  }
+
+  const totEl = document.getElementById('e3dTot');
+  const uniqEl = document.getElementById('e3dUniq');
+  if(totEl) totEl.textContent = _e3dTot;
+  if(uniqEl) uniqEl.textContent = Object.keys(_e3dRows).length;
+}
+
+async function _e3dPollTick(){
+  if(!_e3dOpen || _e3dPaused || _e3dBusy) return;
+  _e3dBusy = true;
+  try{
+    await _e3dEnqueue(async () => {
+      if(!_e3dOpen) return;
+      _e3dPollCount++;
+      const wantStatus = _e3dNeedStatus || (_e3dPollCount % 3 === 1);
+      if(wantStatus){
+        const raw = await esp32WifiFetch('/can/status', 3500);
+        const s = JSON.parse(raw || '{}');
+        _e3dApplyStatus(s);
+        _e3dNeedStatus = false;
+      } else {
+        const raw = await esp32WifiFetch('/can/rx?since=' + _e3dSeq, 3500);
+        const rx = JSON.parse(raw || '{}');
+        _e3dRenderFrames(rx);
+      }
+      const bindNote = _e3dBindState === 'bound' ? ' · Wi-Fi terikat (anti-seluler aktif)' : '';
+      _e3dSetBanner('● Terhubung ke <code>192.168.4.1</code>' + bindNote, 'ok');
+    });
+  }catch(e){
+    const msg = (e && e.message) ? e.message : 'Gagal menghubungi 192.168.4.1';
+    _e3dSetBanner('⚠️ ' + msg + '<br>Sambungkan Wi-Fi HP ke <b>Gesits CAN</b> (<code>12345678</code>). Jika tetap gagal, matikan <b>Data Seluler</b> sementara.', 'err');
+  }finally{
+    _e3dBusy = false;
+    if(_e3dOpen){
+      clearTimeout(_e3dTimer);
+      _e3dTimer = setTimeout(_e3dPollTick, 750);
+    }
+  }
+}
+
+function e3dSendAction(path, label){
+  _e3dEnqueue(async () => {
+    try{
+      const raw = await esp32WifiFetch(path, 4000);
+      const r = JSON.parse(raw || '{}');
+      if(r && r.ok === false){
+        showToast(r.err || ('Gagal: ' + label));
+        return;
+      }
+      _e3dNeedStatus = true;
+      const stRaw = await esp32WifiFetch('/can/status', 3500);
+      _e3dApplyStatus(JSON.parse(stRaw || '{}'));
+      _e3dNeedStatus = false;
+      if(label) showToast(label);
+    }catch(e){
+      showToast('Gagal kirim ke ESP32: ' + ((e && e.message) || 'periksa Wi-Fi Gesits CAN'));
+    }
+  });
+}
+
+function e3dSetMode(m){
+  if(m === 'normal' && !confirm('Aktifkan mode NORMAL (ESP32 ikut mengirim ACK & bisa TX ke bus CAN)?')) return;
+  e3dSendAction('/mode?set=' + m, 'Mode CAN -> ' + m.toUpperCase());
+}
+
+function e3dApplyBaud(){
+  const sel = document.getElementById('e3dBaudSel');
+  const baud = sel ? sel.value : '250000';
+  e3dSendAction('/can/cfg?baud=' + encodeURIComponent(baud), 'Bitrate -> ' + (Number(baud)/1000) + ' kbps');
+}
+
+function e3dAutoDetect(){
+  e3dSendAction('/can/autodetect', 'Auto-Detect bitrate dimulai (±10 detik)...');
+}
+
+function e3dTogglePause(){
+  _e3dPaused = !_e3dPaused;
+  const btn = document.getElementById('e3dPauseBtn');
+  if(btn) btn.textContent = _e3dPaused ? '▶ Lanjut' : '⏸ Pause';
+  if(!_e3dPaused && _e3dOpen) _e3dPollTick();
+}
+
+function e3dClearFrames(){
+  for(const k of Object.keys(_e3dRows)) delete _e3dRows[k];
+  _e3dLog.length = 0;
+  _e3dTot = 0;
+  const totEl = document.getElementById('e3dTot');
+  const uniqEl = document.getElementById('e3dUniq');
+  const tb = document.getElementById('e3dTbody');
+  if(totEl) totEl.textContent = '0';
+  if(uniqEl) uniqEl.textContent = '0';
+  if(tb) tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:14px">Menunggu frame CAN...</td></tr>';
+  e3dSendAction('/can/clear', 'Buffer CAN dibersihkan');
+}
+
+function e3dDownloadCsv(){
+  if(!_e3dLog.length){
+    showToast('Belum ada frame CAN untuk diekspor');
+    return;
+  }
+  const csv = 'ms,id,ext,dlc,rtr,data\n' + _e3dLog.join('\n');
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.exportFile === 'function'){
+    Android.exportFile('gesits_can_log.csv', csv, 'text/csv');
+    showToast('Log CAN CSV siap disimpan/dibagikan');
+    return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+  a.download = 'gesits_can_log.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} }, 1000);
+}
+
+function openEsp32DashModal(){
+  const modal = document.getElementById('esp32DashModal');
+  if(!modal) return;
+  _e3dOpen = true;
+  _e3dPaused = false;
+  _e3dNeedStatus = true;
+  _e3dPollCount = 0;
+  const pBtn = document.getElementById('e3dPauseBtn');
+  if(pBtn) pBtn.textContent = '⏸ Pause';
+
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.bindEsp32Wifi === 'function'){
+    try{ _e3dBindState = Android.bindEsp32Wifi(true) || 'unknown'; }catch(e){ _e3dBindState = 'error'; }
+  } else {
+    _e3dBindState = 'browser';
+  }
+
+  if(_e3dBindState === 'no_wifi'){
+    _e3dSetBanner('⚠️ Wi-Fi HP belum aktif. Sambungkan Wi-Fi ke <b>Gesits CAN</b> (<code>12345678</code>) terlebih dahulu.', 'err');
+  } else {
+    _e3dSetBanner('Menghubungkan ke <code>192.168.4.1</code>... Pastikan Wi-Fi terhubung ke <b>Gesits CAN</b> (matikan Data Seluler jika perlu).', 'warn');
+  }
+
+  modal.classList.add('show');
+  clearTimeout(_e3dTimer);
+  _e3dPollTick();
+}
+
+function _e3dCleanup(){
+  _e3dOpen = false;
+  clearTimeout(_e3dTimer);
+  _e3dTimer = null;
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.bindEsp32Wifi === 'function'){
+    try{ Android.bindEsp32Wifi(false); }catch(e){}
+  }
+  _e3dBindState = 'unbound';
+}
+
+function closeEsp32DashModal(){
+  _e3dCleanup();
+  closeModal('esp32DashModal');
+}
+
 function openEsp32DashboardWeb(){
   const url = 'http://192.168.4.1/';
   if(IS_NATIVE_ANDROID && window.Android && typeof Android.openUrl === 'function'){
