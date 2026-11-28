@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.39",
-  "versionCode": 20,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.39/GesitsDashboard-v1.0.1.39-vc20-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.39",
-  "notes": "- fix: remove truncated web interface code"
+  "version": "1.0.1.40",
+  "versionCode": 21,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.40/GesitsDashboard-v1.0.1.40-vc21-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.40",
+  "notes": "- perf(ui): optimize dashboard polling and status refresh"
 }
