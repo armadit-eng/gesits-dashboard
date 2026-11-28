@@ -755,339 +755,339 @@ String frameToJson(const twai_message_t& msg) {
 }
 
 // ---------------- WEB PAGES ----------------
-const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
-<html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gesits CAN Minimal</title>
-<style>
-:root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--d:#8b949e;--a:#5ee6a0;--w:#ff7b72}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:13px system-ui,sans-serif;padding:12px}
-h1{font-size:17px;margin:0 0 4px}.sub{color:var(--d);font-size:12px;margin-bottom:12px}
-.box{background:var(--p);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:12px}
-.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button{background:var(--a);color:#0e1116;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
-button.sec{background:transparent;color:var(--d);border:1px solid var(--b)}
-button.sec.on{background:var(--a);color:#0e1116;border-color:var(--a)}
-button.warn{background:var(--w);color:#0e1116}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-@media(max-width:460px){.grid{grid-template-columns:1fr}}
-.kv{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px dashed #222933}
-.kv span:first-child{color:var(--d)}.kv span:last-child{font-family:monospace;font-weight:600}
-table{width:100%;border-collapse:collapse;font:12px monospace;background:var(--p);border-radius:10px;overflow:hidden}
-th,td{padding:6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}
-th{color:var(--d);font-size:11px;text-transform:uppercase}.id{color:var(--a);font-weight:700}
-.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--w);margin-right:6px}.dot.live{background:var(--a)}
-</style></head><body>
-<h1>Gesits CAN Minimal</h1>
-<div class="sub">CAN Reader + ACK (Normal Mode) + Emulator MID &middot; FW <b id="fwTxt">-</b> &middot; <a href="/cantool" style="color:#58a6ff">CAN Tool</a> &middot; <a href="/update" style="color:#5ee6a0">Update OTA</a></div>
+const char INDEX_HTML[] PROGMEM =   "<!DOCTYPE html>\n"
+  "<html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+  "<title>Gesits CAN Minimal</title>\n"
+  "<style>\n"
+  ":root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--d:#8b949e;--a:#5ee6a0;--w:#ff7b72}\n"
+  "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:13px system-ui,sans-serif;padding:12px}\n"
+  "h1{font-size:17px;margin:0 0 4px}.sub{color:var(--d);font-size:12px;margin-bottom:12px}\n"
+  ".box{background:var(--p);border:1px solid var(--b);border-radius:10px;padding:12px;margin-bottom:12px}\n"
+  ".row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}\n"
+  "button{background:var(--a);color:#0e1116;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}\n"
+  "button.sec{background:transparent;color:var(--d);border:1px solid var(--b)}\n"
+  "button.sec.on{background:var(--a);color:#0e1116;border-color:var(--a)}\n"
+  "button.warn{background:var(--w);color:#0e1116}\n"
+  ".grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}\n"
+  "@media(max-width:460px){.grid{grid-template-columns:1fr}}\n"
+  ".kv{display:flex;justify-content:space-between;padding:3px 0;font-size:12px;border-bottom:1px dashed #222933}\n"
+  ".kv span:first-child{color:var(--d)}.kv span:last-child{font-family:monospace;font-weight:600}\n"
+  "table{width:100%;border-collapse:collapse;font:12px monospace;background:var(--p);border-radius:10px;overflow:hidden}\n"
+  "th,td{padding:6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}\n"
+  "th{color:var(--d);font-size:11px;text-transform:uppercase}.id{color:var(--a);font-weight:700}\n"
+  ".dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--w);margin-right:6px}.dot.live{background:var(--a)}\n"
+  "</style></head><body>\n"
+  "<h1>Gesits CAN Minimal</h1>\n"
+  "<div class=\"sub\">CAN Reader + ACK (Normal Mode) + Emulator MID &middot; FW <b id=\"fwTxt\">-</b> &middot; <a href=\"/cantool\" style=\"color:#58a6ff\">CAN Tool</a> &middot; <a href=\"/update\" style=\"color:#5ee6a0\">Update OTA</a></div>\n"
+  "\n"
+  "<div class=\"box\">\n"
+  "  <div class=\"row\" style=\"justify-content:space-between\">\n"
+  "    <div>\n"
+  "      <div>Mode CAN: <b id=\"modeTxt\">-</b> &middot; Bitrate: <b id=\"baudTxt\">-</b></div>\n"
+  "      <div style=\"font-size:11px;color:var(--d)\" id=\"modeSub\">Memuat...</div>\n"
+  "    </div>\n"
+  "    <div class=\"row\">\n"
+  "      <button id=\"btnListen\" class=\"sec\" onclick=\"setMode('listen')\">LISTEN (Pasif)</button>\n"
+  "      <button id=\"btnNormal\" class=\"sec\" onclick=\"setMode('normal')\">NORMAL (ACK + TX)</button>\n"
+  "    </div>\n"
+  "  </div>\n"
+  "  <div class=\"row\" style=\"margin-top:10px;padding-top:10px;border-top:1px dashed var(--b)\">\n"
+  "    <span style=\"font-size:12px;color:var(--d)\">MID Heartbeat Emulator (RTR 1s):</span>\n"
+  "    <button id=\"btnMidOn\" class=\"sec\" onclick=\"setOp('/mid/on')\">MID EMULATE: ON</button>\n"
+  "    <button id=\"btnMidOff\" class=\"sec\" onclick=\"setOp('/mid/off')\">MID EMULATE: OFF</button>\n"
+  "    <a href=\"/cantool\"><button class=\"sec\" type=\"button\">CAN Tool</button></a>\n"
+  "    <a href=\"/update\"><button class=\"sec\" type=\"button\">Update OTA</button></a>\n"
+  "  </div>\n"
+  "</div>\n"
+  "\n"
+  "<div class=\"row\" style=\"margin-bottom:10px;font-size:12px\">\n"
+  "  <span><span id=\"dot\" class=\"dot\"></span><b id=\"st\">Connecting...</b></span>\n"
+  "  <span>Total frame: <b id=\"tot\">0</b></span>\n"
+  "  <span>ID unik: <b id=\"uniq\">0</b></span>\n"
+  "  <button onclick=\"dlCsv()\">Download CSV</button>\n"
+  "  <button class=\"sec\" onclick=\"clr()\">Clear</button>\n"
+  "</div>\n"
+  "\n"
+  "<div class=\"grid\">\n"
+  "  <div class=\"box\" style=\"margin:0\">\n"
+  "    <b>Baterai</b> (<span id=\"bSrc\">-</span>)\n"
+  "    <div class=\"kv\"><span>SOC / SOH</span><span id=\"bSoc\">-</span></div>\n"
+  "    <div class=\"kv\"><span>Voltase / Arus</span><span id=\"bVI\">-</span></div>\n"
+  "    <div class=\"kv\"><span>Suhu / Cycle</span><span id=\"bTC\">-</span></div>\n"
+  "  </div>\n"
+  "  <div class=\"box\" style=\"margin:0\">\n"
+  "    <b>Motor / Kontroler</b>\n"
+  "    <div class=\"kv\"><span>Speed / Mode</span><span id=\"mSpd\">-</span></div>\n"
+  "    <div class=\"kv\"><span>Throttle / Torque</span><span id=\"mTrt\">-</span></div>\n"
+  "    <div class=\"kv\"><span>Suhu Inv / Mot</span><span id=\"mTmp\">-</span></div>\n"
+  "    <div class=\"kv\"><span>Status</span><span id=\"mFlg\">-</span></div>\n"
+  "  </div>\n"
+  "</div>\n"
+  "\n"
+  "<div style=\"overflow-x:auto\">\n"
+  "  <table><thead><tr><th>ID</th><th>Ext</th><th>DLC</th><th>RTR</th><th>Data (hex)</th><th>Count</th><th>ms</th></tr></thead>\n"
+  "  <tbody id=\"tb\"><tr><td colspan=\"7\" style=\"text-align:center;color:var(--d);padding:20px\">Menunggu frame CAN...</td></tr></tbody></table>\n"
+  "</div>\n"
+  "\n"
+  "<script>\n"
+  "const $=i=>document.getElementById(i), rows={}, log=[];\n"
+  "let tot=0;\n"
+  "function s8(v){return v>127?v-256:v;}\n"
+  "function s16le(a,b){let v=a|(b<<8);return v>32767?v-65536:v;}\n"
+  "\n"
+  "async function refreshStatus(){\n"
+  "  try{\n"
+  "    const s=await (await fetch('/can/status',{cache:'no-store'})).json();\n"
+  "    if(s.fw) $('fwTxt').textContent=s.fw;\n"
+  "    $('baudTxt').textContent=(s.baud/1e3)+' kbps';\n"
+  "    $('modeTxt').textContent=s.listen?'LISTEN_ONLY':'NORMAL (ACK)';\n"
+  "    $('modeSub').textContent=s.listen?'Pasif, tidak mengirim ACK':'Aktif meng-ACK frame & siap TX';\n"
+  "    $('btnListen').classList.toggle('on',s.listen);\n"
+  "    $('btnNormal').classList.toggle('on',!s.listen);\n"
+  "    $('btnNormal').classList.toggle('warn',!s.listen);\n"
+  "    $('btnMidOn').classList.toggle('on',s.opMode===1);\n"
+  "    $('btnMidOff').classList.toggle('on',s.opMode===0);\n"
+  "  }catch(e){}\n"
+  "}\n"
+  "async function setMode(m){\n"
+  "  if(m==='normal'&&!confirm('Aktifkan mode NORMAL (ESP32 ikut ACK & bisa TX)?'))return;\n"
+  "  await fetch('/mode?set='+m); refreshStatus();\n"
+  "}\n"
+  "async function setOp(u){ await fetch(u); refreshStatus(); }\n"
+  "\n"
+  "function render(f){\n"
+  "  let r=rows[f.id];\n"
+  "  if(!r){\n"
+  "    if(Object.keys(rows).length===0) $('tb').innerHTML='';\n"
+  "    const tr=document.createElement('tr');\n"
+  "    tr.innerHTML='<td class=\"id\"></td><td></td><td></td><td></td><td style=\"font-family:monospace\"></td><td></td><td></td>';\n"
+  "    $('tb').appendChild(tr);\n"
+  "    r=rows[f.id]={n:0,el:tr};\n"
+  "    $('uniq').textContent=Object.keys(rows).length;\n"
+  "  }\n"
+  "  r.n++;\n"
+  "  const hex=f.data.map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(' ');\n"
+  "  const c=r.el.children;\n"
+  "  c[0].textContent='0x'+f.id; c[1].textContent=f.ext?'EXT':'STD'; c[2].textContent=f.dlc;\n"
+  "  c[3].textContent=f.rtr?'RTR':'-'; c[4].textContent=hex; c[5].textContent=r.n; c[6].textContent=f.t;\n"
+  "  if(log.length>15000)log.shift();\n"
+  "  log.push(f.t+',0x'+f.id+','+f.ext+','+f.dlc+','+f.rtr+',\"'+hex+'\"');\n"
+  "}\n"
+  "\n"
+  "const es=new EventSource('/events');\n"
+  "es.onopen=()=>{$('dot').classList.add('live');$('st').textContent='Live';};\n"
+  "es.onerror=()=>{$('dot').classList.remove('live');$('st').textContent='Reconnecting...';};\n"
+  "es.onmessage=e=>{\n"
+  "  try{\n"
+  "    const f=JSON.parse(e.data); tot++; $('tot').textContent=tot; render(f);\n"
+  "    if((f.id==='10261100'||f.id==='10261200')&&!f.rtr&&f.dlc>=6){\n"
+  "      $('bSrc').textContent='0x'+f.id;\n"
+  "      $('bSoc').textContent=f.data[1]+'% / '+f.data[2]+'%';\n"
+  "      $('bVI').textContent=f.data[4]+'V / '+s8(f.data[5])+'A';\n"
+  "      $('bTC').textContent=f.data[3]+'C / '+($('bTC').textContent.split('/')[1]||'-');\n"
+  "    }else if(f.id==='10261202'&&!f.rtr&&f.dlc>=7){\n"
+  "      $('bTC').textContent=($('bTC').textContent.split('/')[0]||'-')+' / '+f.data[6]+'x';\n"
+  "    }else if(f.id==='10261022'&&!f.rtr&&f.dlc>=8){\n"
+  "      const b1=f.data[1], m=(b1&0xC0)===0xC0?'Sport':((b1&0x40)?'Urban':'Eco');\n"
+  "      const spd=(f.data[2]|(f.data[3]<<8))/12;\n"
+  "      $('mSpd').textContent=spd.toFixed(1)+' km/h ('+m+')';\n"
+  "      $('mTmp').textContent=f.data[4]+'C / '+f.data[5]+'C';\n"
+  "      $('mTrt').textContent=(($('mTrt').textContent.split('/')[0])||'-')+' / '+s16le(f.data[6],f.data[7]);\n"
+  "      $('mFlg').textContent=((b1&1)?'PARK':'DRIVE')+((b1&4)?' REM':'')+((b1&8)?' CRZ':'')+((b1&16)?' STD':'');\n"
+  "    }else if(f.id==='10261023'&&!f.rtr&&f.dlc>=3){\n"
+  "      $('mTrt').textContent=f.data[2]+'% / '+(($('mTrt').textContent.split('/')[1])||'-');\n"
+  "    }\n"
+  "  }catch(err){}\n"
+  "};\n"
+  "function dlCsv(){\n"
+  "  if(!log.length)return alert('Kosong');\n"
+  "  const a=document.createElement('a');\n"
+  "  a.href=URL.createObjectURL(new Blob(['ms,id,ext,dlc,rtr,data\\n'+log.join('\\n')],{type:'text/csv'}));\n"
+  "  a.download='gesits_can.csv'; a.click();\n"
+  "}\n"
+  "function clr(){log.length=0;}\n"
+  "refreshStatus(); setInterval(refreshStatus,2500);\n"
+  "</script></body></html>";
 
-<div class="box">
-  <div class="row" style="justify-content:space-between">
-    <div>
-      <div>Mode CAN: <b id="modeTxt">-</b> &middot; Bitrate: <b id="baudTxt">-</b></div>
-      <div style="font-size:11px;color:var(--d)" id="modeSub">Memuat...</div>
-    </div>
-    <div class="row">
-      <button id="btnListen" class="sec" onclick="setMode('listen')">LISTEN (Pasif)</button>
-      <button id="btnNormal" class="sec" onclick="setMode('normal')">NORMAL (ACK + TX)</button>
-    </div>
-  </div>
-  <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--b)">
-    <span style="font-size:12px;color:var(--d)">MID Heartbeat Emulator (RTR 1s):</span>
-    <button id="btnMidOn" class="sec" onclick="setOp('/mid/on')">MID EMULATE: ON</button>
-    <button id="btnMidOff" class="sec" onclick="setOp('/mid/off')">MID EMULATE: OFF</button>
-    <a href="/cantool"><button class="sec" type="button">CAN Tool</button></a>
-    <a href="/update"><button class="sec" type="button">Update OTA</button></a>
-  </div>
-</div>
+const char CANTOOL_HTML[] PROGMEM =   "<!doctype html><html><head><meta charset=\"utf-8\">\n"
+  "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+  "<title>CAN Tool</title>\n"
+  "<style>\n"
+  ":root{--bg:#0e1116;--c:#171c24;--t:#e6edf3;--m:#8b98a8;--a:#2ea043;--w:#d29922;--e:#f85149;--b:#30363d}\n"
+  "*{box-sizing:border-box}body{margin:0;padding:12px;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif}\n"
+  ".card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}\n"
+  "h2{margin:0 0 8px;font-size:15px}label{color:var(--m);font-size:12px;display:block;margin:6px 0 2px}\n"
+  "input,select,button{font:inherit;color:var(--t);background:#0b0f14;border:1px solid var(--b);border-radius:8px;padding:8px}\n"
+  "input[type=text],select{width:100%}button{background:#21262d;cursor:pointer}button.p{background:var(--a);border-color:var(--a);color:#fff}\n"
+  "button.d{background:var(--e);border-color:var(--e)}.r{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.r>*{flex:1;min-width:90px}\n"
+  ".k{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--b)}.k span:first-child{color:var(--m)}\n"
+  ".tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#21262d}.ok{color:var(--a)}.wr{color:var(--w)}.er{color:var(--e)}\n"
+  "table{width:100%;border-collapse:collapse;font:12px ui-monospace,monospace}td,th{padding:4px 6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}\n"
+  ".sc{overflow-x:auto;max-height:340px;overflow-y:auto}.tx{color:var(--w)}a{color:#58a6ff}\n"
+  "</style></head><body>\n"
+  "<a href=\"/\">&larr; Dashboard</a>\n"
+  "<div class=\"card\"><h2>Status &amp; Konfigurasi</h2>\n"
+  "<div class=\"k\"><span>Bitrate aktif</span><b id=\"sBaud\">-</b></div>\n"
+  "<div class=\"k\"><span>Mode</span><b id=\"sMode\">-</b></div>\n"
+  "<div class=\"k\"><span>Bus state</span><b id=\"sState\">-</b></div>\n"
+  "<div class=\"k\"><span>TEC / REC / bus err / missed</span><b id=\"sErr\">-</b></div>\n"
+  "<div class=\"k\"><span>TX ok / gagal</span><b id=\"sTx\">-</b></div>\n"
+  "<div class=\"k\"><span>Heap bebas</span><b id=\"sHeap\">-</b></div>\n"
+  "<div class=\"r\"><div><label>Bitrate</label><select id=\"baud\">\n"
+  "<option value=\"1000000\">1 Mbps</option><option value=\"800000\">800 kbps</option><option value=\"500000\">500 kbps</option>\n"
+  "<option value=\"250000\">250 kbps</option><option value=\"125000\">125 kbps</option><option value=\"100000\">100 kbps</option><option value=\"50000\">50 kbps</option></select></div>\n"
+  "<div><label>Mode</label><select id=\"mode\"><option value=\"listen\">LISTEN (pasif)</option><option value=\"normal\">NORMAL (ACK + TX)</option></select></div></div>\n"
+  "<div class=\"r\" style=\"margin-top:8px\"><button class=\"p\" onclick=\"apply()\">Terapkan</button><button onclick=\"autod()\">Auto-detect bitrate</button></div>\n"
+  "<div id=\"ab\" style=\"margin-top:8px;color:var(--m);font-size:12px\"></div></div>\n"
+  "\n"
+  "<div class=\"card\"><h2>Monitor RX/TX</h2>\n"
+  "<div class=\"r\"><div><label>Filter ID (hex, kosong = semua)</label><input type=\"text\" id=\"fid\" placeholder=\"mis. 3FE\"></div>\n"
+  "<button onclick=\"setF()\">Set filter</button><button id=\"bv\" onclick=\"tv()\">Mode: per-ID</button></div>\n"
+  "<div class=\"r\" style=\"margin:8px 0\"><button onclick=\"pz()\" id=\"bp\">Pause</button><button onclick=\"clr()\">Clear</button><button onclick=\"csv()\">CSV</button></div>\n"
+  "<div class=\"sc\"><table><thead id=\"th\"></thead><tbody id=\"tb\"></tbody></table></div></div>\n"
+  "\n"
+  "<div class=\"card\"><h2>Kirim Frame</h2>\n"
+  "<div class=\"r\"><div><label>ID (hex)</label><input type=\"text\" id=\"tid\" placeholder=\"3FF\"></div>\n"
+  "<div><label>Data (hex, maks 8 byte)</label><input type=\"text\" id=\"tdt\" placeholder=\"09 55 AA AA 00 AA 00 00\"></div></div>\n"
+  "<div class=\"r\" style=\"margin-top:6px\"><label style=\"display:flex;gap:6px;align-items:center\"><input type=\"checkbox\" id=\"text\" checked> Extended 29-bit</label>\n"
+  "<label style=\"display:flex;gap:6px;align-items:center\"><input type=\"checkbox\" id=\"trtr\"> RTR</label>\n"
+  "<div><label>DLC (utk RTR)</label><input type=\"text\" id=\"tdlc\" value=\"0\"></div>\n"
+  "<div><label>Interval (ms)</label><input type=\"text\" id=\"tms\" value=\"1000\"></div></div>\n"
+  "<div class=\"r\" style=\"margin-top:8px\"><button class=\"p\" onclick=\"send(0)\">Kirim 1x</button><button onclick=\"send(1)\">Ulangi</button><button class=\"d\" onclick=\"stopRep()\">Stop</button></div>\n"
+  "<div id=\"tm\" style=\"margin-top:6px;font-size:12px;color:var(--m)\"></div></div>\n"
+  "\n"
+  "<div class=\"card\"><h2>RTR Scan</h2>\n"
+  "<div class=\"r\"><div><label>Dari ID (hex)</label><input type=\"text\" id=\"sf\" value=\"10261200\"></div>\n"
+  "<div><label>Sampai ID (hex)</label><input type=\"text\" id=\"sto\" value=\"1026123F\"></div></div>\n"
+  "<div class=\"r\" style=\"margin-top:6px\"><div><label>Jeda (ms)</label><input type=\"text\" id=\"sg\" value=\"60\"></div>\n"
+  "<div><label>DLC</label><input type=\"text\" id=\"sd\" value=\"0\"></div>\n"
+  "<label style=\"display:flex;gap:6px;align-items:center\"><input type=\"checkbox\" id=\"sx\" checked> Extended</label></div>\n"
+  "<div class=\"r\" style=\"margin-top:8px\"><button class=\"p\" onclick=\"scanGo()\">Mulai scan</button><button class=\"d\" onclick=\"scanStop()\">Stop</button></div>\n"
+  "<div id=\"sm\" style=\"margin-top:6px;font-size:12px;color:var(--m)\"></div>\n"
+  "<div class=\"sc\"><table><thead><tr><th>ID</th><th>balas</th><th>lain</th><th>Data terakhir</th></tr></thead><tbody id=\"stb\"></tbody></table></div></div>\n"
+  "\n"
+  "<script>\n"
+  "const $=i=>document.getElementById(i);let since=0,rows=[],paused=false,view='id',mapId={};\n"
+  "async function J(u){const r=await fetch(u,{cache:'no-store'});return r.json();}\n"
+  "function fb(b){return b>=1e6?(b/1e6)+' Mbps':(b/1e3)+' kbps'}\n"
+  "let b1=0,b2=0;async function st(){if(b1||document.hidden)return;b1=1;try{const s=await J('/can/status');\n"
+  "$('sBaud').textContent=fb(s.baud);$('sMode').innerHTML=s.listen?'<span class=\"tag wr\">LISTEN</span>':'<span class=\"tag ok\">NORMAL</span>';\n"
+  "$('sState').innerHTML='<span class=\"'+(s.state=='RUNNING'?'ok':'er')+'\">'+s.state+'</span>';\n"
+  "$('sErr').textContent=s.tec+' / '+s.rec+' / '+s.berr+' / '+s.miss;$('sHeap').textContent=s.heap;$('sTx').textContent=s.txok+' / '+s.txfail+(s.rep?' (ulang: '+s.repsent+')':'');\n"
+  "if(document.activeElement!==$('baud'))$('baud').value=s.baud;if(document.activeElement!==$('mode'))$('mode').value=s.listen?'listen':'normal';\n"
+  "let a=s.ab,h='';if(a.run)h='Auto-detect... '+(a.idx+1)+'/'+a.res.length+' ('+fb(a.res[Math.min(a.idx,a.res.length-1)][0])+')';\n"
+  "else if(a.res.some(x=>x[1]>0||x[2]>0)||a.best){h=(a.best?'<b class=\"ok\">Terdeteksi: '+fb(a.best)+'</b><br>':'<b class=\"er\">Tidak ada frame valid.</b><br>')+a.res.map(x=>fb(x[0])+': '+x[1]+' frame, '+x[2]+' err').join('<br>')}\n"
+  "$('ab').innerHTML=h;}catch(e){}b1=0;}\n"
+  "async function apply(){await J('/can/cfg?baud='+$('baud').value+'&mode='+$('mode').value);since=0;rows=[];mapId={};st();}\n"
+  "async function autod(){if(confirm('Auto-detect ~11 detik, mode jadi LISTEN. Lanjut?')){await J('/can/autodetect');st();}}\n"
+  "async function setF(){await J('/can/filter?id='+encodeURIComponent($('fid').value.trim()));since=0;rows=[];mapId={};}\n"
+  "async function clr(){await J('/can/clear');rows=[];mapId={};draw();}\n"
+  "function pz(){paused=!paused;$('bp').textContent=paused?'Resume':'Pause'}\n"
+  "function tv(){view=view=='id'?'raw':'id';$('bv').textContent='Mode: '+(view=='id'?'per-ID':'stream');draw();}\n"
+  "function hx(s){return s.replace(/(..)/g,'$1 ').trim()}\n"
+  "async function rx(){if(paused||b2||document.hidden)return;b2=1;try{const d=await J('/can/rx?since='+since);if(d.seq<since){since=0;rows=[];mapId={};}since=d.seq;\n"
+  "for(const f of d.f){const o={t:f[0],id:f[1].toUpperCase(),ext:f[2]&1,rtr:(f[2]>>1)&1,tx:(f[2]>>2)&1,dlc:f[3],d:hx(f[4])};rows.push(o);\n"
+  "const k=o.id+(o.tx?'T':'');const m=mapId[k]||(mapId[k]={n:0,p:0,last:0});m.p=m.last?o.t-m.last:0;m.last=o.t;m.n++;m.o=o;}\n"
+  "if(rows.length>600)rows=rows.slice(-600);draw();}catch(e){}b2=0;}\n"
+  "function draw(){const tb=$('tb'),th=$('th');\n"
+  "if(view=='id'){th.innerHTML='<tr><th>ID</th><th>n</th><th>per(ms)</th><th>DLC</th><th>Data</th></tr>';\n"
+  "tb.innerHTML=Object.keys(mapId).sort().map(k=>{const m=mapId[k],o=m.o;return '<tr class=\"'+(o.tx?'tx':'')+'\"><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+m.n+'</td><td>'+m.p+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>'}).join('');}\n"
+  "else{th.innerHTML='<tr><th>ms</th><th>ID</th><th>DLC</th><th>Data</th></tr>';\n"
+  "tb.innerHTML=rows.slice(-120).reverse().map(o=>'<tr class=\"'+(o.tx?'tx':'')+'\"><td>'+o.t+'</td><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>').join('');}}\n"
+  "function csv(){let c='ms,id,ext,rtr,tx,dlc,data\\n'+rows.map(o=>[o.t,o.id,o.ext,o.rtr,o.tx,o.dlc,o.d].join(',')).join('\\n');\n"
+  "const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='can_log.csv';a.click();}\n"
+  "async function send(rep){const id=$('tid').value.trim();if(!id){$('tm').textContent='ID kosong';return;}\n"
+  "const u='/can/tx?id='+encodeURIComponent(id)+'&ext='+($('text').checked?1:0)+'&rtr='+($('trtr').checked?1:0)+'&dlc='+encodeURIComponent($('tdlc').value)+'&data='+encodeURIComponent($('tdt').value)+(rep?'&rep=1&ms='+encodeURIComponent($('tms').value):'');\n"
+  "const r=await J(u);$('tm').innerHTML=r.ok?'<span class=\"ok\">OK</span>':'<span class=\"er\">'+(r.err||'gagal')+'</span>';st();}\n"
+  "async function stopRep(){await J('/can/txstop');st();}\n"
+  "let sc1=0;async function scanPoll(){if(sc1)return;sc1=1;try{const r=await J('/can/scanres');\n"
+  "$('sm').innerHTML=(r.run?'Scan... ID '+r.cur.toUpperCase()+' ('+r.sent+')':'Selesai: '+r.sent+' RTR, '+r.hits.length+' hidup.');\n"
+  "$('stb').innerHTML=r.hits.map(h=>'<tr><td>'+h[0].toUpperCase()+'</td><td>'+h[1]+'</td><td>'+h[2]+'</td><td>'+hx(h[4])+'</td></tr>').join('');\n"
+  "if(r.run)setTimeout(scanPoll,1000);}catch(e){}sc1=0;}\n"
+  "async function scanGo(){const r=await J('/can/scan?from='+encodeURIComponent($('sf').value.trim())+'&to='+encodeURIComponent($('sto').value.trim())+'&ext='+($('sx').checked?1:0)+'&gap='+encodeURIComponent($('sg').value)+'&dlc='+encodeURIComponent($('sd').value));\n"
+  "if(r.ok===false){$('sm').innerHTML='<span class=\"er\">'+r.err+'</span>';return;}scanPoll();}\n"
+  "async function scanStop(){await J('/can/scanstop');scanPoll();}\n"
+  "setInterval(st,2000);setInterval(rx,700);st();rx();draw();\n"
+  "</script></body></html>";
 
-<div class="row" style="margin-bottom:10px;font-size:12px">
-  <span><span id="dot" class="dot"></span><b id="st">Connecting...</b></span>
-  <span>Total frame: <b id="tot">0</b></span>
-  <span>ID unik: <b id="uniq">0</b></span>
-  <button onclick="dlCsv()">Download CSV</button>
-  <button class="sec" onclick="clr()">Clear</button>
-</div>
-
-<div class="grid">
-  <div class="box" style="margin:0">
-    <b>Baterai</b> (<span id="bSrc">-</span>)
-    <div class="kv"><span>SOC / SOH</span><span id="bSoc">-</span></div>
-    <div class="kv"><span>Voltase / Arus</span><span id="bVI">-</span></div>
-    <div class="kv"><span>Suhu / Cycle</span><span id="bTC">-</span></div>
-  </div>
-  <div class="box" style="margin:0">
-    <b>Motor / Kontroler</b>
-    <div class="kv"><span>Speed / Mode</span><span id="mSpd">-</span></div>
-    <div class="kv"><span>Throttle / Torque</span><span id="mTrt">-</span></div>
-    <div class="kv"><span>Suhu Inv / Mot</span><span id="mTmp">-</span></div>
-    <div class="kv"><span>Status</span><span id="mFlg">-</span></div>
-  </div>
-</div>
-
-<div style="overflow-x:auto">
-  <table><thead><tr><th>ID</th><th>Ext</th><th>DLC</th><th>RTR</th><th>Data (hex)</th><th>Count</th><th>ms</th></tr></thead>
-  <tbody id="tb"><tr><td colspan="7" style="text-align:center;color:var(--d);padding:20px">Menunggu frame CAN...</td></tr></tbody></table>
-</div>
-
-<script>
-const $=i=>document.getElementById(i), rows={}, log=[];
-let tot=0;
-function s8(v){return v>127?v-256:v;}
-function s16le(a,b){let v=a|(b<<8);return v>32767?v-65536:v;}
-
-async function refreshStatus(){
-  try{
-    const s=await (await fetch('/can/status',{cache:'no-store'})).json();
-    if(s.fw) $('fwTxt').textContent=s.fw;
-    $('baudTxt').textContent=(s.baud/1e3)+' kbps';
-    $('modeTxt').textContent=s.listen?'LISTEN_ONLY':'NORMAL (ACK)';
-    $('modeSub').textContent=s.listen?'Pasif, tidak mengirim ACK':'Aktif meng-ACK frame & siap TX';
-    $('btnListen').classList.toggle('on',s.listen);
-    $('btnNormal').classList.toggle('on',!s.listen);
-    $('btnNormal').classList.toggle('warn',!s.listen);
-    $('btnMidOn').classList.toggle('on',s.opMode===1);
-    $('btnMidOff').classList.toggle('on',s.opMode===0);
-  }catch(e){}
-}
-async function setMode(m){
-  if(m==='normal'&&!confirm('Aktifkan mode NORMAL (ESP32 ikut ACK & bisa TX)?'))return;
-  await fetch('/mode?set='+m); refreshStatus();
-}
-async function setOp(u){ await fetch(u); refreshStatus(); }
-
-function render(f){
-  let r=rows[f.id];
-  if(!r){
-    if(Object.keys(rows).length===0) $('tb').innerHTML='';
-    const tr=document.createElement('tr');
-    tr.innerHTML='<td class="id"></td><td></td><td></td><td></td><td style="font-family:monospace"></td><td></td><td></td>';
-    $('tb').appendChild(tr);
-    r=rows[f.id]={n:0,el:tr};
-    $('uniq').textContent=Object.keys(rows).length;
-  }
-  r.n++;
-  const hex=f.data.map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
-  const c=r.el.children;
-  c[0].textContent='0x'+f.id; c[1].textContent=f.ext?'EXT':'STD'; c[2].textContent=f.dlc;
-  c[3].textContent=f.rtr?'RTR':'-'; c[4].textContent=hex; c[5].textContent=r.n; c[6].textContent=f.t;
-  if(log.length>15000)log.shift();
-  log.push(f.t+',0x'+f.id+','+f.ext+','+f.dlc+','+f.rtr+',"'+hex+'"');
-}
-
-const es=new EventSource('/events');
-es.onopen=()=>{$('dot').classList.add('live');$('st').textContent='Live';};
-es.onerror=()=>{$('dot').classList.remove('live');$('st').textContent='Reconnecting...';};
-es.onmessage=e=>{
-  try{
-    const f=JSON.parse(e.data); tot++; $('tot').textContent=tot; render(f);
-    if((f.id==='10261100'||f.id==='10261200')&&!f.rtr&&f.dlc>=6){
-      $('bSrc').textContent='0x'+f.id;
-      $('bSoc').textContent=f.data[1]+'% / '+f.data[2]+'%';
-      $('bVI').textContent=f.data[4]+'V / '+s8(f.data[5])+'A';
-      $('bTC').textContent=f.data[3]+'C / '+($('bTC').textContent.split('/')[1]||'-');
-    }else if(f.id==='10261202'&&!f.rtr&&f.dlc>=7){
-      $('bTC').textContent=($('bTC').textContent.split('/')[0]||'-')+' / '+f.data[6]+'x';
-    }else if(f.id==='10261022'&&!f.rtr&&f.dlc>=8){
-      const b1=f.data[1], m=(b1&0xC0)===0xC0?'Sport':((b1&0x40)?'Urban':'Eco');
-      const spd=(f.data[2]|(f.data[3]<<8))/12;
-      $('mSpd').textContent=spd.toFixed(1)+' km/h ('+m+')';
-      $('mTmp').textContent=f.data[4]+'C / '+f.data[5]+'C';
-      $('mTrt').textContent=(($('mTrt').textContent.split('/')[0])||'-')+' / '+s16le(f.data[6],f.data[7]);
-      $('mFlg').textContent=((b1&1)?'PARK':'DRIVE')+((b1&4)?' REM':'')+((b1&8)?' CRZ':'')+((b1&16)?' STD':'');
-    }else if(f.id==='10261023'&&!f.rtr&&f.dlc>=3){
-      $('mTrt').textContent=f.data[2]+'% / '+(($('mTrt').textContent.split('/')[1])||'-');
-    }
-  }catch(err){}
-};
-function dlCsv(){
-  if(!log.length)return alert('Kosong');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['ms,id,ext,dlc,rtr,data\n'+log.join('\n')],{type:'text/csv'}));
-  a.download='gesits_can.csv'; a.click();
-}
-function clr(){log.length=0;}
-refreshStatus(); setInterval(refreshStatus,2500);
-</script></body></html>)rawliteral";
-
-const char CANTOOL_HTML[] PROGMEM = R"CTHTML(<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CAN Tool</title>
-<style>
-:root{--bg:#0e1116;--c:#171c24;--t:#e6edf3;--m:#8b98a8;--a:#2ea043;--w:#d29922;--e:#f85149;--b:#30363d}
-*{box-sizing:border-box}body{margin:0;padding:12px;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif}
-.card{background:var(--c);border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:12px}
-h2{margin:0 0 8px;font-size:15px}label{color:var(--m);font-size:12px;display:block;margin:6px 0 2px}
-input,select,button{font:inherit;color:var(--t);background:#0b0f14;border:1px solid var(--b);border-radius:8px;padding:8px}
-input[type=text],select{width:100%}button{background:#21262d;cursor:pointer}button.p{background:var(--a);border-color:var(--a);color:#fff}
-button.d{background:var(--e);border-color:var(--e)}.r{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.r>*{flex:1;min-width:90px}
-.k{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed var(--b)}.k span:first-child{color:var(--m)}
-.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;background:#21262d}.ok{color:var(--a)}.wr{color:var(--w)}.er{color:var(--e)}
-table{width:100%;border-collapse:collapse;font:12px ui-monospace,monospace}td,th{padding:4px 6px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}
-.sc{overflow-x:auto;max-height:340px;overflow-y:auto}.tx{color:var(--w)}a{color:#58a6ff}
-</style></head><body>
-<a href="/">&larr; Dashboard</a>
-<div class="card"><h2>Status &amp; Konfigurasi</h2>
-<div class="k"><span>Bitrate aktif</span><b id="sBaud">-</b></div>
-<div class="k"><span>Mode</span><b id="sMode">-</b></div>
-<div class="k"><span>Bus state</span><b id="sState">-</b></div>
-<div class="k"><span>TEC / REC / bus err / missed</span><b id="sErr">-</b></div>
-<div class="k"><span>TX ok / gagal</span><b id="sTx">-</b></div>
-<div class="k"><span>Heap bebas</span><b id="sHeap">-</b></div>
-<div class="r"><div><label>Bitrate</label><select id="baud">
-<option value="1000000">1 Mbps</option><option value="800000">800 kbps</option><option value="500000">500 kbps</option>
-<option value="250000">250 kbps</option><option value="125000">125 kbps</option><option value="100000">100 kbps</option><option value="50000">50 kbps</option></select></div>
-<div><label>Mode</label><select id="mode"><option value="listen">LISTEN (pasif)</option><option value="normal">NORMAL (ACK + TX)</option></select></div></div>
-<div class="r" style="margin-top:8px"><button class="p" onclick="apply()">Terapkan</button><button onclick="autod()">Auto-detect bitrate</button></div>
-<div id="ab" style="margin-top:8px;color:var(--m);font-size:12px"></div></div>
-
-<div class="card"><h2>Monitor RX/TX</h2>
-<div class="r"><div><label>Filter ID (hex, kosong = semua)</label><input type="text" id="fid" placeholder="mis. 3FE"></div>
-<button onclick="setF()">Set filter</button><button id="bv" onclick="tv()">Mode: per-ID</button></div>
-<div class="r" style="margin:8px 0"><button onclick="pz()" id="bp">Pause</button><button onclick="clr()">Clear</button><button onclick="csv()">CSV</button></div>
-<div class="sc"><table><thead id="th"></thead><tbody id="tb"></tbody></table></div></div>
-
-<div class="card"><h2>Kirim Frame</h2>
-<div class="r"><div><label>ID (hex)</label><input type="text" id="tid" placeholder="3FF"></div>
-<div><label>Data (hex, maks 8 byte)</label><input type="text" id="tdt" placeholder="09 55 AA AA 00 AA 00 00"></div></div>
-<div class="r" style="margin-top:6px"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="text" checked> Extended 29-bit</label>
-<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="trtr"> RTR</label>
-<div><label>DLC (utk RTR)</label><input type="text" id="tdlc" value="0"></div>
-<div><label>Interval (ms)</label><input type="text" id="tms" value="1000"></div></div>
-<div class="r" style="margin-top:8px"><button class="p" onclick="send(0)">Kirim 1x</button><button onclick="send(1)">Ulangi</button><button class="d" onclick="stopRep()">Stop</button></div>
-<div id="tm" style="margin-top:6px;font-size:12px;color:var(--m)"></div></div>
-
-<div class="card"><h2>RTR Scan</h2>
-<div class="r"><div><label>Dari ID (hex)</label><input type="text" id="sf" value="10261200"></div>
-<div><label>Sampai ID (hex)</label><input type="text" id="sto" value="1026123F"></div></div>
-<div class="r" style="margin-top:6px"><div><label>Jeda (ms)</label><input type="text" id="sg" value="60"></div>
-<div><label>DLC</label><input type="text" id="sd" value="0"></div>
-<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="sx" checked> Extended</label></div>
-<div class="r" style="margin-top:8px"><button class="p" onclick="scanGo()">Mulai scan</button><button class="d" onclick="scanStop()">Stop</button></div>
-<div id="sm" style="margin-top:6px;font-size:12px;color:var(--m)"></div>
-<div class="sc"><table><thead><tr><th>ID</th><th>balas</th><th>lain</th><th>Data terakhir</th></tr></thead><tbody id="stb"></tbody></table></div></div>
-
-<script>
-const $=i=>document.getElementById(i);let since=0,rows=[],paused=false,view='id',mapId={};
-async function J(u){const r=await fetch(u,{cache:'no-store'});return r.json();}
-function fb(b){return b>=1e6?(b/1e6)+' Mbps':(b/1e3)+' kbps'}
-let b1=0,b2=0;async function st(){if(b1||document.hidden)return;b1=1;try{const s=await J('/can/status');
-$('sBaud').textContent=fb(s.baud);$('sMode').innerHTML=s.listen?'<span class="tag wr">LISTEN</span>':'<span class="tag ok">NORMAL</span>';
-$('sState').innerHTML='<span class="'+(s.state=='RUNNING'?'ok':'er')+'">'+s.state+'</span>';
-$('sErr').textContent=s.tec+' / '+s.rec+' / '+s.berr+' / '+s.miss;$('sHeap').textContent=s.heap;$('sTx').textContent=s.txok+' / '+s.txfail+(s.rep?' (ulang: '+s.repsent+')':'');
-if(document.activeElement!==$('baud'))$('baud').value=s.baud;if(document.activeElement!==$('mode'))$('mode').value=s.listen?'listen':'normal';
-let a=s.ab,h='';if(a.run)h='Auto-detect... '+(a.idx+1)+'/'+a.res.length+' ('+fb(a.res[Math.min(a.idx,a.res.length-1)][0])+')';
-else if(a.res.some(x=>x[1]>0||x[2]>0)||a.best){h=(a.best?'<b class="ok">Terdeteksi: '+fb(a.best)+'</b><br>':'<b class="er">Tidak ada frame valid.</b><br>')+a.res.map(x=>fb(x[0])+': '+x[1]+' frame, '+x[2]+' err').join('<br>')}
-$('ab').innerHTML=h;}catch(e){}b1=0;}
-async function apply(){await J('/can/cfg?baud='+$('baud').value+'&mode='+$('mode').value);since=0;rows=[];mapId={};st();}
-async function autod(){if(confirm('Auto-detect ~11 detik, mode jadi LISTEN. Lanjut?')){await J('/can/autodetect');st();}}
-async function setF(){await J('/can/filter?id='+encodeURIComponent($('fid').value.trim()));since=0;rows=[];mapId={};}
-async function clr(){await J('/can/clear');rows=[];mapId={};draw();}
-function pz(){paused=!paused;$('bp').textContent=paused?'Resume':'Pause'}
-function tv(){view=view=='id'?'raw':'id';$('bv').textContent='Mode: '+(view=='id'?'per-ID':'stream');draw();}
-function hx(s){return s.replace(/(..)/g,'$1 ').trim()}
-async function rx(){if(paused||b2||document.hidden)return;b2=1;try{const d=await J('/can/rx?since='+since);if(d.seq<since){since=0;rows=[];mapId={};}since=d.seq;
-for(const f of d.f){const o={t:f[0],id:f[1].toUpperCase(),ext:f[2]&1,rtr:(f[2]>>1)&1,tx:(f[2]>>2)&1,dlc:f[3],d:hx(f[4])};rows.push(o);
-const k=o.id+(o.tx?'T':'');const m=mapId[k]||(mapId[k]={n:0,p:0,last:0});m.p=m.last?o.t-m.last:0;m.last=o.t;m.n++;m.o=o;}
-if(rows.length>600)rows=rows.slice(-600);draw();}catch(e){}b2=0;}
-function draw(){const tb=$('tb'),th=$('th');
-if(view=='id'){th.innerHTML='<tr><th>ID</th><th>n</th><th>per(ms)</th><th>DLC</th><th>Data</th></tr>';
-tb.innerHTML=Object.keys(mapId).sort().map(k=>{const m=mapId[k],o=m.o;return '<tr class="'+(o.tx?'tx':'')+'"><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+m.n+'</td><td>'+m.p+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>'}).join('');}
-else{th.innerHTML='<tr><th>ms</th><th>ID</th><th>DLC</th><th>Data</th></tr>';
-tb.innerHTML=rows.slice(-120).reverse().map(o=>'<tr class="'+(o.tx?'tx':'')+'"><td>'+o.t+'</td><td>'+(o.tx?'TX ':'')+o.id+(o.ext?'x':'')+(o.rtr?' RTR':'')+'</td><td>'+o.dlc+'</td><td>'+o.d+'</td></tr>').join('');}}
-function csv(){let c='ms,id,ext,rtr,tx,dlc,data\n'+rows.map(o=>[o.t,o.id,o.ext,o.rtr,o.tx,o.dlc,o.d].join(',')).join('\n');
-const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c],{type:'text/csv'}));a.download='can_log.csv';a.click();}
-async function send(rep){const id=$('tid').value.trim();if(!id){$('tm').textContent='ID kosong';return;}
-const u='/can/tx?id='+encodeURIComponent(id)+'&ext='+($('text').checked?1:0)+'&rtr='+($('trtr').checked?1:0)+'&dlc='+encodeURIComponent($('tdlc').value)+'&data='+encodeURIComponent($('tdt').value)+(rep?'&rep=1&ms='+encodeURIComponent($('tms').value):'');
-const r=await J(u);$('tm').innerHTML=r.ok?'<span class="ok">OK</span>':'<span class="er">'+(r.err||'gagal')+'</span>';st();}
-async function stopRep(){await J('/can/txstop');st();}
-let sc1=0;async function scanPoll(){if(sc1)return;sc1=1;try{const r=await J('/can/scanres');
-$('sm').innerHTML=(r.run?'Scan... ID '+r.cur.toUpperCase()+' ('+r.sent+')':'Selesai: '+r.sent+' RTR, '+r.hits.length+' hidup.');
-$('stb').innerHTML=r.hits.map(h=>'<tr><td>'+h[0].toUpperCase()+'</td><td>'+h[1]+'</td><td>'+h[2]+'</td><td>'+hx(h[4])+'</td></tr>').join('');
-if(r.run)setTimeout(scanPoll,1000);}catch(e){}sc1=0;}
-async function scanGo(){const r=await J('/can/scan?from='+encodeURIComponent($('sf').value.trim())+'&to='+encodeURIComponent($('sto').value.trim())+'&ext='+($('sx').checked?1:0)+'&gap='+encodeURIComponent($('sg').value)+'&dlc='+encodeURIComponent($('sd').value));
-if(r.ok===false){$('sm').innerHTML='<span class="er">'+r.err+'</span>';return;}scanPoll();}
-async function scanStop(){await J('/can/scanstop');scanPoll();}
-setInterval(st,2000);setInterval(rx,700);st();rx();draw();
-</script></body></html>)CTHTML";
-
-const char UPDATE_HTML[] PROGMEM = R"OTAHTML(<!DOCTYPE html>
-<html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ESP32 OTA Update</title>
-<style>
-:root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--d:#8b949e;--a:#5ee6a0;--w:#ff7b72}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif;padding:14px;max-width:480px;margin:auto}
-.box{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:14px;margin-top:12px}
-h1{font-size:18px;margin:0 0 6px}a{color:#58a6ff}
-.kv{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px dashed #222933}
-.kv span:first-child{color:var(--d)}.kv b{font-family:monospace}
-input[type=file]{width:100%;margin:12px 0;padding:10px;background:#0b0f14;border:1px solid var(--b);border-radius:8px;color:var(--t)}
-button{width:100%;background:var(--a);color:#0e1116;border:none;border-radius:8px;padding:11px;font-weight:700;font-size:14px;cursor:pointer}
-button:disabled{opacity:.5;cursor:not-allowed}
-.bar{height:10px;background:#0b0f14;border:1px solid var(--b);border-radius:99px;overflow:hidden;margin-top:12px}
-.fill{height:100%;width:0%;background:var(--a);transition:width .15s}
-#msg{font-size:12px;margin-top:8px;color:var(--d)}
-</style></head><body>
-<a href="/">&larr; Dashboard</a> &middot; <a href="/cantool">CAN Tool</a>
-<div class="box">
-  <h1>Update Firmware OTA</h1>
-  <div class="kv"><span>Firmware aktif</span><b id="fw">-</b></div>
-  <div class="kv"><span>Ruang sketch bebas</span><b id="sp">-</b></div>
-  <div style="font-size:12px;color:var(--d);margin-top:10px">
-    Pilih file <b>.bin</b> hasil compile Arduino IDE (<i>Sketch &rarr; Export Compiled Binary</i>). Jangan pilih file <code>.ino</code>.
-  </div>
-  <input type="file" id="f" accept=".bin">
-  <button id="btn" onclick="go()">Upload &amp; Flash OTA</button>
-  <div class="bar"><div class="fill" id="fill"></div></div>
-  <div id="msg">Siap.</div>
-</div>
-<script>
-const $=i=>document.getElementById(i);
-fetch('/can/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{
-  $('fw').textContent=s.fw||'-';
-  $('sp').textContent=s.freeSketch?Math.round(s.freeSketch/1024)+' KB':'-';
-}).catch(()=>{});
-function go(){
-  const file=$('f').files&&$('f').files[0];
-  if(!file){$('msg').textContent='Pilih file .bin terlebih dahulu.';return;}
-  $('btn').disabled=true;
-  $('msg').style.color='#8b949e';
-  $('msg').textContent='Mengunggah '+file.name+' ('+Math.round(file.size/1024)+' KB)...';
-  const x=new XMLHttpRequest();
-  x.open('POST','/ota',true);
-  x.setRequestHeader('Content-Type','application/octet-stream');
-  x.upload.onprogress=e=>{
-    if(e.lengthComputable){
-      const p=Math.round((e.loaded/e.total)*100);
-      $('fill').style.width=p+'%';
-      $('msg').textContent='Mengirim OTA: '+p+'%';
-    }
-  };
-  x.onload=()=>{
-    try{
-      const r=JSON.parse(x.responseText||'{}');
-      if(x.status===200&&r.ok){
-        $('fill').style.width='100%';
-        $('msg').style.color='#5ee6a0';
-        $('msg').textContent='Berhasil! ESP32 reboot... memuat ulang dalam 5 detik.';
-        setTimeout(()=>location.href='/',5000);
-        return;
-      }
-      $('msg').style.color='#ff7b72';
-      $('msg').textContent='Gagal: '+(r.err||x.statusText||'error');
-    }catch(e){
-      $('msg').style.color='#ff7b72';
-      $('msg').textContent='Respon error: HTTP '+x.status;
-    }
-    $('btn').disabled=false;
-  };
-  x.onerror=()=>{
-    $('msg').style.color='#ff7b72';
-    $('msg').textContent='Koneksi putus ke 192.168.4.1.';
-    $('btn').disabled=false;
-  };
-  x.send(file);
-}
-</script></body></html>)OTAHTML";
+const char UPDATE_HTML[] PROGMEM =   "<!DOCTYPE html>\n"
+  "<html lang=\"id\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
+  "<title>ESP32 OTA Update</title>\n"
+  "<style>\n"
+  ":root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--d:#8b949e;--a:#5ee6a0;--w:#ff7b72}\n"
+  "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif;padding:14px;max-width:480px;margin:auto}\n"
+  ".box{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:14px;margin-top:12px}\n"
+  "h1{font-size:18px;margin:0 0 6px}a{color:#58a6ff}\n"
+  ".kv{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px dashed #222933}\n"
+  ".kv span:first-child{color:var(--d)}.kv b{font-family:monospace}\n"
+  "input[type=file]{width:100%;margin:12px 0;padding:10px;background:#0b0f14;border:1px solid var(--b);border-radius:8px;color:var(--t)}\n"
+  "button{width:100%;background:var(--a);color:#0e1116;border:none;border-radius:8px;padding:11px;font-weight:700;font-size:14px;cursor:pointer}\n"
+  "button:disabled{opacity:.5;cursor:not-allowed}\n"
+  ".bar{height:10px;background:#0b0f14;border:1px solid var(--b);border-radius:99px;overflow:hidden;margin-top:12px}\n"
+  ".fill{height:100%;width:0%;background:var(--a);transition:width .15s}\n"
+  "#msg{font-size:12px;margin-top:8px;color:var(--d)}\n"
+  "</style></head><body>\n"
+  "<a href=\"/\">&larr; Dashboard</a> &middot; <a href=\"/cantool\">CAN Tool</a>\n"
+  "<div class=\"box\">\n"
+  "  <h1>Update Firmware OTA</h1>\n"
+  "  <div class=\"kv\"><span>Firmware aktif</span><b id=\"fw\">-</b></div>\n"
+  "  <div class=\"kv\"><span>Ruang sketch bebas</span><b id=\"sp\">-</b></div>\n"
+  "  <div style=\"font-size:12px;color:var(--d);margin-top:10px\">\n"
+  "    Pilih file <b>.bin</b> hasil compile Arduino IDE (<i>Sketch &rarr; Export Compiled Binary</i>). Jangan pilih file <code>.ino</code>.\n"
+  "  </div>\n"
+  "  <input type=\"file\" id=\"f\" accept=\".bin\">\n"
+  "  <button id=\"btn\" onclick=\"go()\">Upload &amp; Flash OTA</button>\n"
+  "  <div class=\"bar\"><div class=\"fill\" id=\"fill\"></div></div>\n"
+  "  <div id=\"msg\">Siap.</div>\n"
+  "</div>\n"
+  "<script>\n"
+  "const $=i=>document.getElementById(i);\n"
+  "fetch('/can/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{\n"
+  "  $('fw').textContent=s.fw||'-';\n"
+  "  $('sp').textContent=s.freeSketch?Math.round(s.freeSketch/1024)+' KB':'-';\n"
+  "}).catch(()=>{});\n"
+  "function go(){\n"
+  "  const file=$('f').files&&$('f').files[0];\n"
+  "  if(!file){$('msg').textContent='Pilih file .bin terlebih dahulu.';return;}\n"
+  "  $('btn').disabled=true;\n"
+  "  $('msg').style.color='#8b949e';\n"
+  "  $('msg').textContent='Mengunggah '+file.name+' ('+Math.round(file.size/1024)+' KB)...';\n"
+  "  const x=new XMLHttpRequest();\n"
+  "  x.open('POST','/ota',true);\n"
+  "  x.setRequestHeader('Content-Type','application/octet-stream');\n"
+  "  x.upload.onprogress=e=>{\n"
+  "    if(e.lengthComputable){\n"
+  "      const p=Math.round((e.loaded/e.total)*100);\n"
+  "      $('fill').style.width=p+'%';\n"
+  "      $('msg').textContent='Mengirim OTA: '+p+'%';\n"
+  "    }\n"
+  "  };\n"
+  "  x.onload=()=>{\n"
+  "    try{\n"
+  "      const r=JSON.parse(x.responseText||'{}');\n"
+  "      if(x.status===200&&r.ok){\n"
+  "        $('fill').style.width='100%';\n"
+  "        $('msg').style.color='#5ee6a0';\n"
+  "        $('msg').textContent='Berhasil! ESP32 reboot... memuat ulang dalam 5 detik.';\n"
+  "        setTimeout(()=>location.href='/',5000);\n"
+  "        return;\n"
+  "      }\n"
+  "      $('msg').style.color='#ff7b72';\n"
+  "      $('msg').textContent='Gagal: '+(r.err||x.statusText||'error');\n"
+  "    }catch(e){\n"
+  "      $('msg').style.color='#ff7b72';\n"
+  "      $('msg').textContent='Respon error: HTTP '+x.status;\n"
+  "    }\n"
+  "    $('btn').disabled=false;\n"
+  "  };\n"
+  "  x.onerror=()=>{\n"
+  "    $('msg').style.color='#ff7b72';\n"
+  "    $('msg').textContent='Koneksi putus ke 192.168.4.1.';\n"
+  "    $('btn').disabled=false;\n"
+  "  };\n"
+  "  x.send(file);\n"
+  "}\n"
+  "</script></body></html>";
 
 // ---------------- HTTP SERVER ----------------
 String readClientLine(WiFiClient& client) {
