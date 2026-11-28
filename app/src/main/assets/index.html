@@ -3658,6 +3658,13 @@ function motoImgFallback(img){
         </details>
         <div id="b2SimSendStatus" style="font-size:10px;color:var(--muted);margin-top:8px">Nilai yang tidak diubah tetap memakai nilai terakhir di ESP32. Berlaku saat emulator terkait aktif.</div>
       </div>
+      <div style="margin-top:10px;padding:10px 12px;border:1px solid rgba(94,230,160,.28);border-radius:12px;background:rgba(94,230,160,.05);display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div>
+          <div style="font-size:11px;font-weight:800;color:var(--text)">📡 Firmware &amp; Update OTA</div>
+          <div style="font-size:10px;color:var(--muted)">Versi ESP32: <b id="b2FwVerText" style="color:var(--text)">—</b></div>
+        </div>
+        <button type="button" onclick="openEsp32PairModal()" style="padding:8px 10px;border-radius:10px;border:1px solid rgba(94,230,160,.45);background:rgba(94,230,160,.12);color:var(--green);font-weight:800;font-size:11px;cursor:pointer">KELOLA OTA &rarr;</button>
+      </div>
         </div>
       </details>
 
@@ -5750,6 +5757,28 @@ function statsSvgIcon(name){
     <div id="esp32PairUnsupported" style="display:none;font-size:12px;color:var(--warning);background:rgba(255,193,7,.08);border:1px solid rgba(255,193,7,.25);border-radius:10px;padding:10px;margin-bottom:10px">
       ⚠️ Browser/WebView ini belum dukung Web Bluetooth. Buka pakai Chrome for Android versi terbaru, di luar embedded WebView.
     </div>
+    <div style="margin:10px 0 4px;padding:11px 12px;border:1px solid rgba(94,230,160,.28);border-radius:12px;background:rgba(94,230,160,.05)">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:800;letter-spacing:.3px">📡 Firmware &amp; OTA ESP32</span>
+        <span id="esp32FwVerText" style="font-size:11px;font-weight:700;color:var(--muted)">FW: —</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:9px">
+        Unduh source sketch minimalis (<code>.ino</code>) atau flash pembaruan firmware <code>.bin</code> via Wi-Fi AP <b>Gesits CAN</b> (<code>192.168.4.1</code>).
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
+        <button class="modal-btn" type="button" onclick="downloadEsp32Sketch()" style="font-size:11px;padding:9px 8px;margin:0">📥 Unduh Sketch (.ino)</button>
+        <button class="modal-btn cancel" type="button" onclick="triggerEsp32OtaPicker()" style="font-size:11px;padding:9px 8px;margin:0;color:var(--green);border-color:rgba(var(--green-rgb),.45)">📦 Flash OTA (.bin)</button>
+        <button class="modal-btn cancel" type="button" onclick="downloadAndFlashReleaseBin()" style="font-size:11px;padding:9px 8px;margin:0;color:#29b6f6;border-color:rgba(41,182,246,.45)">☁️ Cek .bin Rilis</button>
+        <button class="modal-btn cancel" type="button" onclick="openEsp32OtaWeb()" style="font-size:11px;padding:9px 8px;margin:0;color:var(--warning);border-color:rgba(255,167,38,.45)">🌐 Web OTA (192.168.4.1)</button>
+      </div>
+      <input type="file" id="esp32OtaFileInput" accept=".bin,application/octet-stream" style="display:none" onchange="_esp32OnOtaFileSelected(this)">
+      <div id="esp32OtaProgressWrap" style="display:none;margin-top:9px">
+        <div style="height:8px;background:rgba(0,0,0,.35);border:1px solid var(--border);border-radius:99px;overflow:hidden">
+          <div id="esp32OtaProgressFill" style="height:100%;width:0%;background:var(--green);transition:width .15s"></div>
+        </div>
+      </div>
+      <div id="esp32OtaStatusText" style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.35"></div>
+    </div>
     <div class="modal-actions" style="flex-direction:column;gap:8px">
       <button class="modal-btn" id="esp32ScanBtn" onclick="esp32Connect()"><span style="display:inline-flex;width:13px;height:13px;vertical-align:-2px;margin-right:6px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>Cari &amp; Sambungkan ESP32</button>
       <button class="modal-btn cancel" onclick="esp32ForgetAndReconnect()" style="color:var(--warning);border-color:rgba(255,167,38,.4)">🧹 Lupakan Cache &amp; Sambung Ulang</button>
@@ -6463,10 +6492,16 @@ function _compareVersions(a, b){
 let _latestReleaseCache = null;
 function _parseGithubReleaseObj(data){
   if(!data || !data.tag_name) return null;
-  const apkAsset = (data.assets||[]).find(a => a.name && a.name.endsWith('.apk'));
+  const assets = data.assets || [];
+  const apkAsset = assets.find(a => a.name && a.name.endsWith('.apk'));
+  const binAsset = assets.find(a => a.name && a.name.toLowerCase().endsWith('.bin') && /esp32|gesits|can/i.test(a.name))
+                || assets.find(a => a.name && a.name.toLowerCase().endsWith('.bin'));
+  const inoAsset = assets.find(a => a.name && a.name.toLowerCase().endsWith('.ino'));
   return {
     tag: (data.tag_name||'').replace(/^v/i,''),
     apkUrl: apkAsset ? apkAsset.browser_download_url : null,
+    esp32BinUrl: binAsset ? binAsset.browser_download_url : null,
+    esp32InoUrl: inoAsset ? inoAsset.browser_download_url : null,
     htmlUrl: data.html_url || null,
     notes: data.body || '',
     publishedAt: data.published_at || ''
@@ -6516,6 +6551,8 @@ async function fetchLatestGithubRelease(forceRefresh){
     _latestReleaseCache = {
       tag: String(rPwa.data.version).replace(/^v/i,''),
       apkUrl: rPwa.data.apkUrl || null,
+      esp32BinUrl: rPwa.data.esp32BinUrl || null,
+      esp32InoUrl: rPwa.data.esp32InoUrl || null,
       htmlUrl: rPwa.data.releaseUrl || PWA_WEB_URL,
       notes: rPwa.data.notes || '',
       publishedAt: rPwa.data.publishedAt || ''
@@ -8281,7 +8318,9 @@ function _battery2HandleLine(line){
   const k=line.indexOf('=');
   if(k<1) return;
   const key=line.slice(0,k).trim().toUpperCase();
-  const v=Number(line.slice(k+1).trim());
+  const rawVal=line.slice(k+1).trim();
+  if(key==='FWVER'){ if(typeof _esp32UpdateFwUI==='function') _esp32UpdateFwUI(rawVal); return; }
+  const v=Number(rawVal);
   if(!Number.isFinite(v)) return;
   const data={};
   if(key==='SOC') data.soc=v;
@@ -8389,7 +8428,7 @@ let _bmsRxBuf = new Uint8Array(0); // buffer reassembly, krn 1 frame BMS (~300 b
 const ESP32_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const ESP32_CHAR_NOTIFY_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // TX: ESP32 -> app
 const ESP32_CHAR_WRITE_UUID  = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // RX: app -> ESP32 (command)
-const esp32Data = { connected:false, deviceName:'' };
+const esp32Data = { connected:false, deviceName:'', fwVersion:'' };
 let _esp32Device=null, _esp32Server=null, _esp32Char=null, _esp32WriteChar=null;
 let _esp32RxBuffer = ''; // buffer reassembly baris teks, sama pola _motorLeRxBuffer
 
@@ -15764,6 +15803,9 @@ function parseResponse(raw, source='motor'){
         musicVolLiveLabel(num);
       }
       break;
+    case 'FWVER':
+      if(typeof _esp32UpdateFwUI === 'function') _esp32UpdateFwUI(val.trim());
+      break;
   }
 }
 
@@ -18201,6 +18243,8 @@ function openEsp32PairModal(){
   document.getElementById('esp32PairUnsupported').style.display =
     (IS_NATIVE_ANDROID || navigator.bluetooth) ? 'none' : 'block';
   _esp32UpdatePairUI();
+  _esp32UpdateFwUI(esp32Data.fwVersion);
+  _esp32ProbeApFw();
 }
 
 function _esp32UpdatePairUI(){
@@ -18218,6 +18262,192 @@ function _esp32UpdatePairUI(){
     if(text) text.textContent='Belum terhubung';
     if(scanBtn) scanBtn.style.display='block';
     if(discBtn) discBtn.style.display='none';
+  }
+}
+
+function _esp32UpdateFwUI(ver){
+  const v = String(ver || '').trim();
+  if(v) esp32Data.fwVersion = v;
+  const shown = esp32Data.fwVersion || '—';
+  const el = document.getElementById('esp32FwVerText');
+  if(el) el.textContent = 'FW: ' + shown;
+  const b2el = document.getElementById('b2FwVerText');
+  if(b2el) b2el.textContent = shown;
+}
+
+function _esp32SetOtaUi(msg, pct, isErr){
+  const st = document.getElementById('esp32OtaStatusText');
+  const wrap = document.getElementById('esp32OtaProgressWrap');
+  const fill = document.getElementById('esp32OtaProgressFill');
+  if(st){
+    st.textContent = msg || '';
+    st.style.color = isErr ? 'var(--danger)' : (pct >= 100 ? 'var(--green)' : 'var(--muted)');
+  }
+  if(wrap && fill){
+    if(typeof pct === 'number' && pct >= 0){
+      wrap.style.display = 'block';
+      fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+    } else {
+      wrap.style.display = 'none';
+      fill.style.width = '0%';
+    }
+  }
+}
+
+async function _esp32ProbeApFw(){
+  try{
+    const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const t = setTimeout(() => { try{ ctl && ctl.abort(); }catch(e){} }, 1500);
+    const res = await fetch('http://192.168.4.1/can/status', { cache:'no-store', signal: ctl ? ctl.signal : undefined });
+    clearTimeout(t);
+    if(res && res.ok){
+      const s = await res.json();
+      if(s && s.fw) _esp32UpdateFwUI(s.fw);
+      return s;
+    }
+  }catch(e){}
+  return null;
+}
+
+async function downloadEsp32Sketch(){
+  _esp32SetOtaUi('Menyiapkan source code gesits_can_minimal.ino...');
+  try{
+    let res = null;
+    try{ res = await fetch('./firmware/gesits_can_minimal.ino', { cache:'no-store' }); }catch(e){}
+    if(!res || !res.ok) res = await fetch('./firmware/gesits_can_minimal.ino');
+    if(!res || !res.ok) throw new Error('File firmware tidak ditemukan di aset app');
+    const code = await res.text();
+    if(IS_NATIVE_ANDROID && window.Android && typeof Android.exportFile === 'function'){
+      Android.exportFile('gesits_can_minimal.ino', code, 'text/plain');
+      _esp32SetOtaUi('✓ Sketch gesits_can_minimal.ino siap disimpan/dibagikan.', 100);
+      showToast('Sketch ESP32 siap disimpan/dibagikan');
+      return;
+    }
+    const blob = new Blob([code], { type:'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'gesits_can_minimal.ino';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} }, 1000);
+    _esp32SetOtaUi('✓ Sketch gesits_can_minimal.ino berhasil diunduh.', 100);
+  }catch(e){
+    _esp32SetOtaUi('Gagal mengunduh sketch: ' + (e.message || e), -1, true);
+  }
+}
+
+function openEsp32OtaWeb(){
+  const url = 'http://192.168.4.1/update';
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.openUrl === 'function'){
+    Android.openUrl(url);
+  } else {
+    window.open(url, '_blank');
+  }
+  _esp32SetOtaUi('Pastikan Wi-Fi HP terhubung ke "Gesits CAN" (sandi 12345678).');
+}
+
+function triggerEsp32OtaPicker(){
+  const inp = document.getElementById('esp32OtaFileInput');
+  if(!inp) return;
+  inp.value = '';
+  inp.click();
+}
+
+async function _esp32FlashOtaBlob(fileOrBlob, fileName){
+  const name = fileName || (fileOrBlob && fileOrBlob.name) || 'firmware.bin';
+  if(!name.toLowerCase().endsWith('.bin')){
+    _esp32SetOtaUi('File harus berekstensi .bin (hasil Export Compiled Binary Arduino IDE), bukan .ino.', -1, true);
+    return;
+  }
+  if(!fileOrBlob || fileOrBlob.size < 4096){
+    _esp32SetOtaUi('Ukuran file .bin terlalu kecil atau tidak valid.', -1, true);
+    return;
+  }
+  try{
+    const head = new Uint8Array(await fileOrBlob.slice(0, 1).arrayBuffer());
+    if(head[0] !== 0xE9){
+      _esp32SetOtaUi('Header file bukan firmware ESP32 valid (magic byte != 0xE9).', -1, true);
+      return;
+    }
+  }catch(e){}
+
+  _esp32SetOtaUi('Mengecek koneksi Wi-Fi ESP32 (192.168.4.1)...', 0);
+  const st = await _esp32ProbeApFw();
+  if(!st){
+    _esp32SetOtaUi('ESP32 tidak terjangkau di 192.168.4.1. Sambungkan Wi-Fi HP ke "Gesits CAN" (12345678), atau klik "Web OTA".', -1, true);
+    return;
+  }
+  if(st.freeSketch && fileOrBlob.size > st.freeSketch){
+    _esp32SetOtaUi('Ukuran .bin (' + Math.round(fileOrBlob.size/1024) + ' KB) melebihi ruang OTA ESP32 (' + Math.round(st.freeSketch/1024) + ' KB).', -1, true);
+    return;
+  }
+
+  _esp32SetOtaUi('Mengunggah ' + name + ' (' + Math.round(fileOrBlob.size/1024) + ' KB)...', 1);
+  await new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'http://192.168.4.1/ota', true);
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+    xhr.timeout = 90000;
+    xhr.upload.onprogress = (ev) => {
+      if(ev.lengthComputable){
+        const pct = Math.max(1, Math.round((ev.loaded / ev.total) * 100));
+        _esp32SetOtaUi('Mengirim OTA ke ESP32: ' + pct + '%', pct);
+      }
+    };
+    xhr.onload = () => {
+      try{
+        const r = JSON.parse(xhr.responseText || '{}');
+        if(xhr.status === 200 && r.ok){
+          _esp32SetOtaUi('✅ OTA berhasil! ESP32 sedang reboot (±5 detik)...', 100);
+          showToast('Firmware ESP32 berhasil diperbarui!');
+          setTimeout(() => { _esp32ProbeApFw(); }, 5500);
+          resolve(true);
+          return;
+        }
+        _esp32SetOtaUi('OTA gagal: ' + (r.err || xhr.statusText || ('HTTP ' + xhr.status)), -1, true);
+      }catch(e){
+        _esp32SetOtaUi('Respon OTA error (HTTP ' + xhr.status + ')', -1, true);
+      }
+      resolve(false);
+    };
+    xhr.onerror = () => {
+      _esp32SetOtaUi('Koneksi ke 192.168.4.1 terputus. Coba buka "Web OTA" di browser.', -1, true);
+      resolve(false);
+    };
+    xhr.ontimeout = () => {
+      _esp32SetOtaUi('Timeout upload OTA ke ESP32.', -1, true);
+      resolve(false);
+    };
+    xhr.send(fileOrBlob);
+  });
+}
+
+function _esp32OnOtaFileSelected(input){
+  const file = input && input.files && input.files[0];
+  if(!file) return;
+  _esp32FlashOtaBlob(file, file.name);
+}
+
+async function downloadAndFlashReleaseBin(){
+  _esp32SetOtaUi('Memeriksa rilis firmware ESP32 terbaru di GitHub...');
+  try{
+    const rel = await fetchLatestGithubRelease(true);
+    if(!rel || !rel.esp32BinUrl){
+      _esp32SetOtaUi('Rilis v' + (rel && rel.tag ? rel.tag : '?') + ' belum menyertakan file .bin ESP32. Gunakan "Unduh Sketch (.ino)" untuk compile atau pilih .bin lokal.');
+      return;
+    }
+    _esp32SetOtaUi('Mengunduh .bin rilis v' + rel.tag + '...');
+    const res = await fetch(rel.esp32BinUrl, { cache:'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const fname = rel.esp32BinUrl.split('/').pop() || ('gesits_can_v' + rel.tag + '.bin');
+    if(confirm('Firmware .bin v' + rel.tag + ' (' + Math.round(blob.size/1024) + ' KB) berhasil diunduh.\n\nPastikan Wi-Fi HP terhubung ke "Gesits CAN" (192.168.4.1). Flash sekarang?')){
+      await _esp32FlashOtaBlob(blob, fname);
+    } else {
+      _esp32SetOtaUi('Unduhan .bin v' + rel.tag + ' dibatalkan oleh pengguna.');
+    }
+  }catch(e){
+    _esp32SetOtaUi('Gagal cek/unduh .bin rilis: ' + (e.message || e), -1, true);
   }
 }
 

@@ -17,6 +17,7 @@ const SHELL_FILES = [
   './',
   './index.html',
   './charging_molis_indonesia.json',
+  './firmware/gesits_can_minimal.ino',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

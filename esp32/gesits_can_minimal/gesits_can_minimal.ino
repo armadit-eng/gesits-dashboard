@@ -24,8 +24,10 @@
 #include <esp_wifi.h>
 #include <esp_system.h>
 #include <Preferences.h>
+#include <Update.h>
 #include "driver/twai.h"
 
+#define FW_VERSION "1.0.0-minimal"
 #define ENABLE_BLE 1   // 1 = aktifkan BLE ke app Android, 0 = WiFi web saja (lebih ringan)
 
 #if ENABLE_BLE
@@ -518,6 +520,7 @@ void bleSendLine(const String& line) {
 }
 
 void reportCanStatusBle() {
+  bleSendLine(String("FWVER=")   + FW_VERSION);
   bleSendLine(String("CANMODE=") + (listenOnlyMode ? "0" : "1"));
   bleSendLine(String("MIDEMU=")  + (opMode == OP_MID ? "1" : "0"));
   bleSendLine(String("SIMMODE=") + String((int)opMode));
@@ -672,7 +675,7 @@ String ctStatusJson() {
       default: break;
     }
   }
-  String j = "{\"baud\":" + String(canBaud);
+  String j = "{\"fw\":\"" FW_VERSION "\",\"baud\":" + String(canBaud);
   j += String(",\"listen\":") + (listenOnlyMode ? "true" : "false");
   j += ",\"opMode\":" + String((int)opMode);
   j += String(",\"state\":\"") + st + "\"";
@@ -684,6 +687,7 @@ String ctStatusJson() {
   }
   j += ",\"seq\":" + String(ctSeq);
   j += ",\"heap\":" + String((uint32_t)ESP.getFreeHeap());
+  j += ",\"freeSketch\":" + String((uint32_t)ESP.getFreeSketchSpace());
   j += ",\"txok\":" + String(ctTxOk) + ",\"txfail\":" + String(ctTxFail);
   j += String(",\"rep\":") + (ctRepOn ? "true" : "false") + ",\"repsent\":" + String(ctRepSent);
   j += String(",\"ab\":{\"run\":") + (abRunning ? "true" : "false");
@@ -773,7 +777,7 @@ th{color:var(--d);font-size:11px;text-transform:uppercase}.id{color:var(--a);fon
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--w);margin-right:6px}.dot.live{background:var(--a)}
 </style></head><body>
 <h1>Gesits CAN Minimal</h1>
-<div class="sub">CAN Reader + ACK (Normal Mode) + Emulator MID &middot; <a href="/cantool" style="color:#58a6ff">Buka CAN Tool &rarr;</a></div>
+<div class="sub">CAN Reader + ACK (Normal Mode) + Emulator MID &middot; FW <b id="fwTxt">-</b> &middot; <a href="/cantool" style="color:#58a6ff">CAN Tool</a> &middot; <a href="/update" style="color:#5ee6a0">Update OTA</a></div>
 
 <div class="box">
   <div class="row" style="justify-content:space-between">
@@ -790,7 +794,8 @@ th{color:var(--d);font-size:11px;text-transform:uppercase}.id{color:var(--a);fon
     <span style="font-size:12px;color:var(--d)">MID Heartbeat Emulator (RTR 1s):</span>
     <button id="btnMidOn" class="sec" onclick="setOp('/mid/on')">MID EMULATE: ON</button>
     <button id="btnMidOff" class="sec" onclick="setOp('/mid/off')">MID EMULATE: OFF</button>
-    <a href="/cantool"><button class="sec" type="button">CAN Tool (Scan/TX/AutoBaud)</button></a>
+    <a href="/cantool"><button class="sec" type="button">CAN Tool</button></a>
+    <a href="/update"><button class="sec" type="button">Update OTA</button></a>
   </div>
 </div>
 
@@ -832,6 +837,7 @@ function s16le(a,b){let v=a|(b<<8);return v>32767?v-65536:v;}
 async function refreshStatus(){
   try{
     const s=await (await fetch('/can/status',{cache:'no-store'})).json();
+    if(s.fw) $('fwTxt').textContent=s.fw;
     $('baudTxt').textContent=(s.baud/1e3)+' kbps';
     $('modeTxt').textContent=s.listen?'LISTEN_ONLY':'NORMAL (ACK)';
     $('modeSub').textContent=s.listen?'Pasif, tidak mengirim ACK':'Aktif meng-ACK frame & siap TX';
@@ -1003,6 +1009,85 @@ async function scanStop(){await J('/can/scanstop');scanPoll();}
 setInterval(st,2000);setInterval(rx,700);st();rx();draw();
 </script></body></html>)CTHTML";
 
+const char UPDATE_HTML[] PROGMEM = R"OTAHTML(<!DOCTYPE html>
+<html lang="id"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 OTA Update</title>
+<style>
+:root{--bg:#0e1116;--p:#161b22;--b:#2a313c;--t:#e6edf3;--d:#8b949e;--a:#5ee6a0;--w:#ff7b72}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--t);font:14px system-ui,sans-serif;padding:14px;max-width:480px;margin:auto}
+.box{background:var(--p);border:1px solid var(--b);border-radius:12px;padding:14px;margin-top:12px}
+h1{font-size:18px;margin:0 0 6px}a{color:#58a6ff}
+.kv{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px dashed #222933}
+.kv span:first-child{color:var(--d)}.kv b{font-family:monospace}
+input[type=file]{width:100%;margin:12px 0;padding:10px;background:#0b0f14;border:1px solid var(--b);border-radius:8px;color:var(--t)}
+button{width:100%;background:var(--a);color:#0e1116;border:none;border-radius:8px;padding:11px;font-weight:700;font-size:14px;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.bar{height:10px;background:#0b0f14;border:1px solid var(--b);border-radius:99px;overflow:hidden;margin-top:12px}
+.fill{height:100%;width:0%;background:var(--a);transition:width .15s}
+#msg{font-size:12px;margin-top:8px;color:var(--d)}
+</style></head><body>
+<a href="/">&larr; Dashboard</a> &middot; <a href="/cantool">CAN Tool</a>
+<div class="box">
+  <h1>Update Firmware OTA</h1>
+  <div class="kv"><span>Firmware aktif</span><b id="fw">-</b></div>
+  <div class="kv"><span>Ruang sketch bebas</span><b id="sp">-</b></div>
+  <div style="font-size:12px;color:var(--d);margin-top:10px">
+    Pilih file <b>.bin</b> hasil compile Arduino IDE (<i>Sketch &rarr; Export Compiled Binary</i>). Jangan pilih file <code>.ino</code>.
+  </div>
+  <input type="file" id="f" accept=".bin">
+  <button id="btn" onclick="go()">Upload &amp; Flash OTA</button>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+  <div id="msg">Siap.</div>
+</div>
+<script>
+const $=i=>document.getElementById(i);
+fetch('/can/status',{cache:'no-store'}).then(r=>r.json()).then(s=>{
+  $('fw').textContent=s.fw||'-';
+  $('sp').textContent=s.freeSketch?Math.round(s.freeSketch/1024)+' KB':'-';
+}).catch(()=>{});
+function go(){
+  const file=$('f').files&&$('f').files[0];
+  if(!file){$('msg').textContent='Pilih file .bin terlebih dahulu.';return;}
+  $('btn').disabled=true;
+  $('msg').style.color='#8b949e';
+  $('msg').textContent='Mengunggah '+file.name+' ('+Math.round(file.size/1024)+' KB)...';
+  const x=new XMLHttpRequest();
+  x.open('POST','/ota',true);
+  x.setRequestHeader('Content-Type','application/octet-stream');
+  x.upload.onprogress=e=>{
+    if(e.lengthComputable){
+      const p=Math.round((e.loaded/e.total)*100);
+      $('fill').style.width=p+'%';
+      $('msg').textContent='Mengirim OTA: '+p+'%';
+    }
+  };
+  x.onload=()=>{
+    try{
+      const r=JSON.parse(x.responseText||'{}');
+      if(x.status===200&&r.ok){
+        $('fill').style.width='100%';
+        $('msg').style.color='#5ee6a0';
+        $('msg').textContent='Berhasil! ESP32 reboot... memuat ulang dalam 5 detik.';
+        setTimeout(()=>location.href='/',5000);
+        return;
+      }
+      $('msg').style.color='#ff7b72';
+      $('msg').textContent='Gagal: '+(r.err||x.statusText||'error');
+    }catch(e){
+      $('msg').style.color='#ff7b72';
+      $('msg').textContent='Respon error: HTTP '+x.status;
+    }
+    $('btn').disabled=false;
+  };
+  x.onerror=()=>{
+    $('msg').style.color='#ff7b72';
+    $('msg').textContent='Koneksi putus ke 192.168.4.1.';
+    $('btn').disabled=false;
+  };
+  x.send(file);
+}
+</script></body></html>)OTAHTML";
+
 // ---------------- HTTP SERVER ----------------
 String readClientLine(WiFiClient& client) {
   String line = "";
@@ -1024,10 +1109,29 @@ String readClientLine(WiFiClient& client) {
   return line;
 }
 
+void sendCorsHeaders(WiFiClient& c) {
+  c.println("Access-Control-Allow-Origin: *");
+  c.println("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+  c.println("Access-Control-Allow-Headers: Content-Type");
+  c.println("Access-Control-Allow-Private-Network: true");
+}
+
 void replyJson(WiFiClient& c, const String& body) {
   c.println("HTTP/1.1 200 OK");
   c.println("Content-Type: application/json");
   c.println("Cache-Control: no-store");
+  sendCorsHeaders(c);
+  c.println("Connection: close");
+  c.println();
+  c.print(body);
+  c.stop();
+}
+
+void replyJsonStatus(WiFiClient& c, int code, const char* statusText, const String& body) {
+  c.print("HTTP/1.1 "); c.print(code); c.print(" "); c.println(statusText);
+  c.println("Content-Type: application/json");
+  c.println("Cache-Control: no-store");
+  sendCorsHeaders(c);
   c.println("Connection: close");
   c.println();
   c.print(body);
@@ -1134,11 +1238,119 @@ bool handleCanTool(WiFiClient& client, const String& reqLine) {
   return false;
 }
 
+void handleOtaUpload(WiFiClient& client, size_t contentLength) {
+  if (contentLength == 0 || contentLength > ESP.getFreeSketchSpace()) {
+    replyJsonStatus(client, 400, "Bad Request",
+      "{\"ok\":false,\"err\":\"Ukuran .bin tidak valid atau melebihi kapasitas flash\"}");
+    return;
+  }
+  opMode = OP_OFF;
+  ctRepOn = false;
+  scRun = false;
+  if (sseClientActive) { sseClient.stop(); sseClientActive = false; }
+
+  if (!Update.begin(contentLength)) {
+    replyJsonStatus(client, 500, "Internal Server Error",
+      String("{\"ok\":false,\"err\":\"Update.begin gagal: ") + Update.errorString() + "\"}");
+    return;
+  }
+
+  uint8_t buf[1024];
+  size_t received = 0;
+  unsigned long lastDataMs = millis();
+  bool magicChecked = false;
+  bool magicValid = true;
+
+  while (received < contentLength && (millis() - lastDataMs < 15000)) {
+    int avail = client.available();
+    if (avail > 0) {
+      size_t want = contentLength - received;
+      if (want > sizeof(buf)) want = sizeof(buf);
+      if ((size_t)avail < want) want = (size_t)avail;
+      int n = client.read(buf, want);
+      if (n > 0) {
+        lastDataMs = millis();
+        if (!magicChecked) {
+          magicChecked = true;
+          if (buf[0] != 0xE9) {
+            magicValid = false;
+            break;
+          }
+        }
+        if (Update.write(buf, (size_t)n) != (size_t)n) {
+          Update.abort();
+          replyJsonStatus(client, 500, "Internal Server Error",
+            String("{\"ok\":false,\"err\":\"Write flash gagal: ") + Update.errorString() + "\"}");
+          return;
+        }
+        received += (size_t)n;
+      }
+    } else {
+      if (!client.connected()) break;
+      delay(1);
+    }
+    yield();
+  }
+
+  if (!magicValid) {
+    Update.abort();
+    replyJsonStatus(client, 400, "Bad Request",
+      "{\"ok\":false,\"err\":\"Header file bukan .bin ESP32 (magic != 0xE9)\"}");
+    return;
+  }
+  if (received != contentLength) {
+    Update.abort();
+    replyJsonStatus(client, 400, "Bad Request",
+      "{\"ok\":false,\"err\":\"Upload terputus sebelum selesai\"}");
+    return;
+  }
+  if (!Update.end(true) || Update.hasError()) {
+    replyJsonStatus(client, 500, "Internal Server Error",
+      String("{\"ok\":false,\"err\":\"Update.end gagal: ") + Update.errorString() + "\"}");
+    return;
+  }
+
+  replyJson(client, String("{\"ok\":true,\"fw\":\"") + FW_VERSION + "\",\"size\":" + String((unsigned long)received) + "}");
+  delay(400);
+  ESP.restart();
+}
+
 void handleClient(WiFiClient client) {
   String reqLine = readClientLine(client);
+  size_t contentLength = 0;
   while (client.connected()) {
     String line = readClientLine(client);
     if (line.length() == 0) break;
+    String low = line;
+    low.toLowerCase();
+    if (low.startsWith("content-length:")) {
+      contentLength = (size_t)low.substring(15).toInt();
+    }
+  }
+
+  if (reqLine.startsWith("OPTIONS ")) {
+    client.println("HTTP/1.1 204 No Content");
+    sendCorsHeaders(client);
+    client.println("Connection: close");
+    client.println();
+    client.stop();
+    return;
+  }
+
+  if (reqLine.startsWith("POST /ota")) {
+    handleOtaUpload(client, contentLength);
+    return;
+  }
+
+  if (reqLine.indexOf("GET /update") >= 0) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/html; charset=utf-8");
+    client.println("Connection: close");
+    client.println();
+    client.print(UPDATE_HTML);
+    delay(2);
+    client.stop();
+    return;
   }
 
   if (handleCanTool(client, reqLine)) return;
@@ -1295,8 +1507,9 @@ void loop() {
       case 15: line = String("CANMODE=") + (listenOnlyMode ? "0" : "1"); break;
       case 16: line = String("MIDEMU=")  + (opMode == OP_MID ? "1" : "0"); break;
       case 17: line = String("SIMMODE=") + String((int)opMode); break;
+      case 18: line = String("FWVER=")   + FW_VERSION; break;
     }
-    bleFieldIndex = (bleFieldIndex + 1) % 18;
+    bleFieldIndex = (bleFieldIndex + 1) % 19;
     if (line.length() > 0) bleSendLine(line);
   }
 #endif
