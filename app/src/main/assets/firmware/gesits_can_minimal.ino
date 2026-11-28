@@ -906,7 +906,9 @@ const char INDEX_HTML[] PROGMEM =   "<!DOCTYPE html>\n"
   "  a.download='gesits_can.csv'; a.click();\n"
   "}\n"
   "function clr(){log.length=0;}\n"
-  "refreshStatus(); setInterval(refreshStatus,2500);\n"
+  "let stBusy=0;\n"
+  "async function refreshStatusSafe(){if(stBusy)return;stBusy=1;try{await refreshStatus();}finally{stBusy=0;}}\n"
+  "refreshStatusSafe(); setInterval(refreshStatusSafe,2500);\n"
   "</script></body></html>";
 
 const char CANTOOL_HTML[] PROGMEM =   "<!doctype html><html><head><meta charset=\"utf-8\">\n"
@@ -1007,7 +1009,9 @@ const char CANTOOL_HTML[] PROGMEM =   "<!doctype html><html><head><meta charset=
   "async function scanGo(){const r=await J('/can/scan?from='+encodeURIComponent($('sf').value.trim())+'&to='+encodeURIComponent($('sto').value.trim())+'&ext='+($('sx').checked?1:0)+'&gap='+encodeURIComponent($('sg').value)+'&dlc='+encodeURIComponent($('sd').value));\n"
   "if(r.ok===false){$('sm').innerHTML='<span class=\"er\">'+r.err+'</span>';return;}scanPoll();}\n"
   "async function scanStop(){await J('/can/scanstop');scanPoll();}\n"
-  "setInterval(st,2000);setInterval(rx,700);st();rx();draw();\n"
+  "let _busy=0,_tick=0;\n"
+  "async function pollStep(){if(_busy||document.hidden){setTimeout(pollStep,500);return;}_busy=1;try{await rx();if(_tick%3===0)await st();_tick++;}finally{_busy=0;setTimeout(pollStep,500);}}\n"
+  "st().then(()=>{rx();draw();setTimeout(pollStep,500);});\n"
   "</script></body></html>";
 
 const char UPDATE_HTML[] PROGMEM =   "<!DOCTYPE html>\n"
@@ -1090,12 +1094,11 @@ const char UPDATE_HTML[] PROGMEM =   "<!DOCTYPE html>\n"
   "</script></body></html>";
 
 // ---------------- HTTP SERVER ----------------
-String readClientLine(WiFiClient& client) {
+String readClientLine(WiFiClient& client, unsigned long waitMs = 150) {
   String line = "";
   unsigned long start = millis();
-  while (client.connected() && millis() - start < 500) {
-    delay(1);
-    while (client.available()) {
+  while (client.connected() && (millis() - start < waitMs)) {
+    if (client.available()) {
       char c = client.read();
       if (c == '\r') {
         if (client.peek() == '\n') client.read();
@@ -1105,6 +1108,8 @@ String readClientLine(WiFiClient& client) {
       } else {
         line += c;
       }
+    } else {
+      delay(1);
     }
   }
   return line;
@@ -1317,10 +1322,14 @@ void handleOtaUpload(WiFiClient& client, size_t contentLength) {
 }
 
 void handleClient(WiFiClient client) {
-  String reqLine = readClientLine(client);
+  String reqLine = readClientLine(client, 80);
+  if (reqLine.length() == 0) {
+    client.stop();
+    return;
+  }
   size_t contentLength = 0;
   while (client.connected()) {
-    String line = readClientLine(client);
+    String line = readClientLine(client, 120);
     if (line.length() == 0) break;
     String low = line;
     low.toLowerCase();

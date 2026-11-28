@@ -3317,9 +3317,6 @@ function motoImgFallback(img){
     <div class="diag-tab" id="dtab2" onclick="switchDiagTab('battery')">Baterai</div>
   </div>
   <div id="viewThrottle" style="overflow-y:auto">
-    <div style="display:flex;gap:8px;padding:8px 12px 0">
-      <button type="button" onclick="openCanSnifferModal()" style="flex:1;background:rgba(41,182,246,.12);border:1px solid rgba(41,182,246,.4);color:#29b6f6;border-radius:10px;padding:9px 10px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit">🔍 Live CAN Sniffer (Wi-Fi 192.168.4.1)</button>
-    </div>
     <div class="chart-wrap">
       <div class="chart-bg"><canvas id="throttleCanvas" style="width:100%;height:100%;display:block"></canvas></div>
     </div>
@@ -5800,8 +5797,11 @@ function statsSvgIcon(name){
         <span style="font-size:12px;font-weight:800;letter-spacing:.3px">📡 Firmware &amp; OTA ESP32</span>
         <span id="esp32FwVerText" style="font-size:11px;font-weight:700;color:var(--muted)">FW: —</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:9px">
+      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:8px">
         Unduh source sketch minimalis (<code>.ino</code>) atau flash pembaruan firmware <code>.bin</code> via Wi-Fi AP <b>Gesits CAN</b> (<code>192.168.4.1</code>).
+      </div>
+      <div style="font-size:11px;color:var(--warning);background:rgba(255,167,38,.10);border:1px solid rgba(255,167,38,.35);border-radius:9px;padding:8px 10px;margin-bottom:9px;line-height:1.4">
+        ⚠️ <b>Peringatan Data Seluler:</b> Matikan <b>Data Seluler</b> HP terlebih dahulu saat terhubung ke Wi-Fi <b>Gesits CAN</b> agar HP tidak mengalihkan akses <code>192.168.4.1</code> ke jaringan seluler.
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px">
         <button class="modal-btn" type="button" onclick="downloadEsp32Sketch()" style="font-size:11px;padding:9px 8px;margin:0">📥 Unduh Sketch (.ino)</button>
@@ -5822,96 +5822,10 @@ function statsSvgIcon(name){
       <button class="modal-btn cancel" onclick="esp32ForgetAndReconnect()" style="color:var(--warning);border-color:rgba(255,167,38,.4)">🧹 Lupakan Cache &amp; Sambung Ulang</button>
       <button class="modal-btn cancel" id="esp32DisconnectBtn" onclick="esp32Disconnect()" style="display:none">Putuskan Koneksi</button>
       <button class="modal-btn cancel" onclick="closeModal('esp32PairModal');showDevLog()" style="color:#29b6f6;border-color:#29b6f6">📋 Lihat Log Mentah (debug)</button>
-      <button class="modal-btn cancel" type="button" onclick="closeModal('esp32PairModal');openCanSnifferModal()" style="color:var(--green);border-color:rgba(var(--green-rgb),.45)">🔍 Live CAN Sniffer (192.168.4.1)</button>
+      <button class="modal-btn cancel" type="button" onclick="openEsp32DashboardWeb()" style="color:var(--green);border-color:rgba(var(--green-rgb),.45)">🌐 Buka Web ESP32 (192.168.4.1)</button>
       <button class="modal-btn cancel" onclick="closeModal('esp32PairModal')">TUTUP</button>
     </div>
     <p style="font-size:11px;color:var(--muted);margin-top:8px">Pakai "Lupakan Cache" kalau habis update firmware ESP32 dan tombol kontak di Home gak berfungsi meski status di sini "Terhubung" — ini bersihkan cache characteristic lama yg tersimpan di HP/browser.</p>
-  </div>
-</div>
-
-<!-- MODAL: LIVE CAN SNIFFER & TOOL (ESP32 Wi-Fi AP 192.168.4.1) -->
-<div class="modal-overlay" id="canSnifferModal">
-  <div class="modal" style="max-width:540px;max-height:88vh;overflow-y:auto;text-align:left">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
-      <h3 style="margin:0">🔍 Live CAN Sniffer &amp; Tool</h3>
-      <span id="ctFwBadge" style="font-size:10.5px;font-weight:700;color:var(--muted);padding:2px 8px;border:1px solid var(--border);border-radius:99px">FW: —</span>
-    </div>
-    <div style="font-size:11.5px;color:var(--muted);margin-bottom:10px" id="ctStatusLine">Sambungkan Wi-Fi HP ke AP <b>Gesits CAN</b> (<code>192.168.4.1</code>) lalu pantau &amp; kirim frame CAN secara langsung.</div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:9px 10px;font-size:11px;margin-bottom:10px">
-      <div>Bitrate: <b id="ctBaudTxt">—</b></div>
-      <div>Mode: <b id="ctModeTxt">—</b></div>
-      <div>Bus State: <b id="ctStateTxt">—</b></div>
-      <div>TEC/REC/Err: <b id="ctErrTxt">—</b></div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-      <button type="button" id="ctBtnListen" onclick="ctSetMode('listen')" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">LISTEN (Pasif)</button>
-      <button type="button" id="ctBtnNormal" onclick="ctSetMode('normal')" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">NORMAL (ACK + TX)</button>
-      <button type="button" id="ctBtnMidOn" onclick="ctSetOp('/mid/on')" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">MID EMULATE: ON</button>
-      <button type="button" id="ctBtnMidOff" onclick="ctSetOp('/mid/off')" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">MID EMULATE: OFF</button>
-    </div>
-
-    <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
-      <select id="ctBaudSel" style="flex:1;min-width:110px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:7px 8px;font-size:11px;font-family:inherit">
-        <option value="1000000">1 Mbps</option>
-        <option value="800000">800 kbps</option>
-        <option value="500000" selected>500 kbps</option>
-        <option value="250000">250 kbps</option>
-        <option value="125000">125 kbps</option>
-        <option value="100000">100 kbps</option>
-        <option value="50000">50 kbps</option>
-      </select>
-      <button type="button" onclick="ctApplyCfg()" style="background:rgba(var(--green-rgb),.15);border:1px solid rgba(var(--green-rgb),.45);color:var(--green);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Terapkan</button>
-      <button type="button" onclick="ctAutoDetect()" style="background:rgba(255,167,38,.12);border:1px solid rgba(255,167,38,.45);color:var(--warning);border-radius:8px;padding:7px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Auto-Detect</button>
-    </div>
-    <div id="ctAbMsg" style="font-size:10.5px;color:var(--muted);margin-bottom:8px;line-height:1.35"></div>
-
-    <div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:10px;background:rgba(0,0,0,.18)">
-      <div style="display:flex;gap:6px;margin-bottom:7px;flex-wrap:wrap;align-items:center">
-        <input type="text" id="ctFilterId" placeholder="Filter ID hex (mis. 3FE)" style="flex:1;min-width:120px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-size:11px;font-family:monospace">
-        <button type="button" onclick="ctApplyFilter()" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Filter</button>
-        <button type="button" id="ctViewBtn" onclick="ctToggleView()" style="background:var(--card2);border:1px solid var(--border);color:#29b6f6;border-radius:7px;padding:6px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">per-ID</button>
-      </div>
-      <div style="display:flex;gap:6px;margin-bottom:7px">
-        <button type="button" id="ctPauseBtn" onclick="ctTogglePause()" style="flex:1;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏸ Pause</button>
-        <button type="button" onclick="ctClearRx()" style="flex:1;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">🗑 Clear</button>
-        <button type="button" onclick="ctExportCsv()" style="flex:1;background:rgba(var(--green-rgb),.14);border:1px solid rgba(var(--green-rgb),.4);color:var(--green);border-radius:7px;padding:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📥 CSV</button>
-      </div>
-      <div style="overflow:auto;max-height:210px;border:1px solid var(--border);border-radius:8px;background:rgba(0,0,0,.25)">
-        <table style="width:100%;border-collapse:collapse;font:11px monospace">
-          <thead id="ctHead" style="background:rgba(255,255,255,.04);position:sticky;top:0"></thead>
-          <tbody id="ctBody"><tr><td style="padding:12px;color:var(--muted);text-align:center">Menunggu frame dari 192.168.4.1…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div style="border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:10px;background:rgba(0,0,0,.18)">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:7px">
-        <span style="font-size:11.5px;font-weight:700">📤 Kirim Frame TX</span>
-        <button type="button" onclick="ctApplyVotolPreset()" style="background:rgba(255,167,38,.14);border:1px solid rgba(255,167,38,.45);color:var(--warning);border-radius:7px;padding:4px 8px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit">⚡ Preset Poll Votol 0x3FF</button>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 2fr;gap:6px;margin-bottom:6px">
-        <input type="text" id="ctTxId" placeholder="ID hex (3FF)" value="3FF" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-size:11px;font-family:monospace">
-        <input type="text" id="ctTxData" placeholder="09 55 AA AA 00 AA 00 00" value="09 55 AA AA 00 AA 00 00" style="background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 8px;font-size:11px;font-family:monospace">
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;margin-bottom:7px">
-        <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="ctTxExt"> Ext 29-bit</label>
-        <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="ctTxRtr"> RTR</label>
-        <label style="display:flex;align-items:center;gap:4px">DLC <input type="number" id="ctTxDlc" value="0" min="0" max="8" style="width:44px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 5px;font-size:11px"></label>
-        <label style="display:flex;align-items:center;gap:4px">Int(ms) <input type="number" id="ctTxMs" value="500" min="20" style="width:60px;background:var(--card2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 5px;font-size:11px"></label>
-      </div>
-      <div style="display:flex;gap:6px">
-        <button type="button" onclick="ctSendFrame(false)" style="flex:1;background:rgba(var(--green-rgb),.15);border:1px solid rgba(var(--green-rgb),.45);color:var(--green);border-radius:7px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Kirim 1x</button>
-        <button type="button" onclick="ctSendFrame(true)" style="flex:1;background:rgba(41,182,246,.14);border:1px solid rgba(41,182,246,.45);color:#29b6f6;border-radius:7px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Ulangi</button>
-        <button type="button" onclick="ctStopRepeat()" style="flex:1;background:rgba(255,82,82,.14);border:1px solid rgba(255,82,82,.45);color:var(--danger);border-radius:7px;padding:7px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Stop</button>
-      </div>
-      <div id="ctTxMsg" style="font-size:10.5px;color:var(--muted);margin-top:6px"></div>
-    </div>
-
-    <div class="modal-actions">
-      <button class="modal-btn cancel" type="button" onclick="closeCanSnifferModal()">TUTUP</button>
-    </div>
   </div>
 </div>
 
@@ -18590,7 +18504,7 @@ function openEsp32OtaWeb(){
   } else {
     window.open(url, '_blank');
   }
-  _esp32SetOtaUi('Pastikan Wi-Fi HP terhubung ke "Gesits CAN" (sandi 12345678).');
+  _esp32SetOtaUi('Pastikan Wi-Fi HP terhubung ke "Gesits CAN" (sandi 12345678) dan DATA SELULER dimatikan sementara.');
 }
 
 function triggerEsp32OtaPicker(){
@@ -18621,7 +18535,7 @@ async function _esp32FlashOtaBlob(fileOrBlob, fileName){
   _esp32SetOtaUi('Mengecek koneksi Wi-Fi ESP32 (192.168.4.1)...', 0);
   const st = await _esp32ProbeApFw();
   if(!st){
-    _esp32SetOtaUi('ESP32 tidak terjangkau di 192.168.4.1. Sambungkan Wi-Fi HP ke "Gesits CAN" (12345678), atau klik "Web OTA".', -1, true);
+    _esp32SetOtaUi('ESP32 tidak terjangkau di 192.168.4.1. Sambungkan Wi-Fi HP ke "Gesits CAN" (12345678), matikan DATA SELULER sementara, atau klik "Web OTA".', -1, true);
     return;
   }
   if(st.freeSketch && fileOrBlob.size > st.freeSketch){
@@ -18688,7 +18602,7 @@ async function downloadAndFlashReleaseBin(){
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const blob = await res.blob();
     const fname = rel.esp32BinUrl.split('/').pop() || ('gesits_can_v' + rel.tag + '.bin');
-    if(confirm('Firmware .bin v' + rel.tag + ' (' + Math.round(blob.size/1024) + ' KB) berhasil diunduh.\n\nPastikan Wi-Fi HP terhubung ke "Gesits CAN" (192.168.4.1). Flash sekarang?')){
+    if(confirm('Firmware .bin v' + rel.tag + ' (' + Math.round(blob.size/1024) + ' KB) berhasil diunduh.\n\nPastikan Wi-Fi HP terhubung ke "Gesits CAN" (192.168.4.1) dan DATA SELULER sudah dimatikan. Flash sekarang?')){
       await _esp32FlashOtaBlob(blob, fname);
     } else {
       _esp32SetOtaUi('Unduhan .bin v' + rel.tag + ' dibatalkan oleh pengguna.');
@@ -30772,235 +30686,16 @@ function _onAppBackupFileSelected(input){
 }
 
 // ══════════════════════════════════════════════════════════
-// LIVE CAN SNIFFER & TOOL IN-APP (ESP32 192.168.4.1)
+// PINTASAN WEB DASHBOARD ESP32 (192.168.4.1)
 // ══════════════════════════════════════════════════════════
-const CT_ESP_BASE = 'http://192.168.4.1';
-let _ctPollTimer = null, _ctSince = 0, _ctRows = [], _ctMapId = {};
-let _ctPaused = false, _ctView = 'id', _ctBusyStatus = false, _ctBusyRx = false;
-
-function openCanSnifferModal(){
-  const m = document.getElementById('canSnifferModal');
-  if(!m) return;
-  m.classList.add('show');
-  _ctSince = 0; _ctRows = []; _ctMapId = {};
-  _ctDrawTable();
-  ctRefreshStatus();
-  ctPollRx();
-  if(_ctPollTimer) clearInterval(_ctPollTimer);
-  _ctPollTimer = setInterval(()=>{
-    const modal = document.getElementById('canSnifferModal');
-    if(!modal || !modal.classList.contains('show')){ closeCanSnifferModal(); return; }
-    ctRefreshStatus();
-    ctPollRx();
-  }, 500);
-}
-function closeCanSnifferModal(){
-  if(_ctPollTimer){ clearInterval(_ctPollTimer); _ctPollTimer = null; }
-  closeModal('canSnifferModal');
-}
-async function _ctFetchJson(path, timeoutMs = 2500){
-  const ctl = new AbortController();
-  const tm = setTimeout(()=>ctl.abort(), timeoutMs);
-  try{
-    const res = await fetch(CT_ESP_BASE + path, { cache:'no-store', signal: ctl.signal });
-    clearTimeout(tm);
-    return await res.json();
-  }catch(e){
-    clearTimeout(tm);
-    throw e;
-  }
-}
-function _ctFmtBaud(b){ return b >= 1e6 ? (b/1e6)+' Mbps' : (b/1e3)+' kbps'; }
-function _ctHx(s){ return String(s||'').replace(/(..)/g,'$1 ').trim(); }
-
-async function ctRefreshStatus(){
-  if(_ctBusyStatus) return;
-  _ctBusyStatus = true;
-  try{
-    const s = await _ctFetchJson('/can/status', 2200);
-    const stLine = document.getElementById('ctStatusLine');
-    if(stLine) stLine.innerHTML = '<span style="color:var(--green);font-weight:700">● Terhubung ke ESP32 (192.168.4.1)</span> · TX ok: '+(s.txok||0)+' / fail: '+(s.txfail||0)+(s.rep?' (repeat '+s.repsent+')':'');
-    const fwEl = document.getElementById('ctFwBadge');
-    if(fwEl && s.fw){ fwEl.textContent = 'FW: v'+s.fw; fwEl.style.color = 'var(--green)'; }
-    document.getElementById('ctBaudTxt').textContent = s.baud ? _ctFmtBaud(s.baud) : '—';
-    document.getElementById('ctModeTxt').textContent = s.listen ? 'LISTEN (Pasif)' : 'NORMAL (ACK)';
-    document.getElementById('ctModeTxt').style.color = s.listen ? 'var(--warning)' : 'var(--green)';
-    document.getElementById('ctStateTxt').textContent = s.state || '—';
-    document.getElementById('ctStateTxt').style.color = s.state === 'RUNNING' ? 'var(--green)' : 'var(--danger)';
-    document.getElementById('ctErrTxt').textContent = (s.tec??0)+' / '+(s.rec??0)+' / '+(s.berr??0);
-    const sel = document.getElementById('ctBaudSel');
-    if(sel && document.activeElement !== sel && s.baud) sel.value = String(s.baud);
-    document.getElementById('ctBtnListen').style.borderColor = s.listen ? 'var(--warning)' : 'var(--border)';
-    document.getElementById('ctBtnNormal').style.borderColor = !s.listen ? 'var(--green)' : 'var(--border)';
-    document.getElementById('ctBtnMidOn').style.borderColor = s.opMode===1 ? 'var(--green)' : 'var(--border)';
-    document.getElementById('ctBtnMidOff').style.borderColor = s.opMode===0 ? '#29b6f6' : 'var(--border)';
-    const abEl = document.getElementById('ctAbMsg');
-    if(abEl && s.ab){
-      const a = s.ab;
-      if(a.run){
-        const cur = a.res[Math.min(a.idx, a.res.length-1)];
-        abEl.innerHTML = '⏳ Auto-detect bitrate… ('+(a.idx+1)+'/'+a.res.length+': '+_ctFmtBaud(cur[0])+')';
-      } else if(a.best || a.res.some(x=>x[1]>0||x[2]>0)){
-        abEl.innerHTML = (a.best ? '<b style="color:var(--green)">✓ Terdeteksi: '+_ctFmtBaud(a.best)+'</b> · ' : '<b style="color:var(--danger)">Tidak ada frame valid</b> · ')
-          + a.res.map(x=>_ctFmtBaud(x[0])+': '+x[1]+'f/'+x[2]+'e').join(' | ');
-      }
-    }
-  }catch(e){
-    const stLine = document.getElementById('ctStatusLine');
-    if(stLine) stLine.innerHTML = '<span style="color:var(--warning)">⚠ 192.168.4.1 belum terjangkau.</span> Sambungkan Wi-Fi HP ke AP <b>Gesits CAN</b> (sandi <code>12345678</code>).';
-  }
-  _ctBusyStatus = false;
-}
-async function ctSetMode(m){
-  if(m==='normal' && !confirm('Aktifkan mode NORMAL (ESP32 mengirim ACK & bisa TX frame ke CAN bus)?')) return;
-  try{ await fetch(CT_ESP_BASE+'/mode?set='+m); ctRefreshStatus(); }catch(e){ showToast('Gagal ubah mode CAN'); }
-}
-async function ctSetOp(path){
-  try{ await fetch(CT_ESP_BASE+path); ctRefreshStatus(); }catch(e){ showToast('Gagal mengirim perintah ke ESP32'); }
-}
-async function ctApplyCfg(){
-  const baud = document.getElementById('ctBaudSel').value;
-  try{
-    await _ctFetchJson('/can/cfg?baud='+encodeURIComponent(baud));
-    _ctSince = 0; _ctRows = []; _ctMapId = {};
-    _ctDrawTable();
-    ctRefreshStatus();
-    showToast('Bitrate CAN diubah ke '+_ctFmtBaud(Number(baud)));
-  }catch(e){ showToast('Gagal mengatur bitrate CAN'); }
-}
-async function ctAutoDetect(){
-  if(!confirm('Auto-detect memindai bitrate CAN ±11 detik dalam mode LISTEN. Lanjutkan?')) return;
-  try{ await _ctFetchJson('/can/autodetect'); ctRefreshStatus(); }catch(e){ showToast('Gagal memulai auto-detect'); }
-}
-async function ctApplyFilter(){
-  const fid = document.getElementById('ctFilterId').value.trim();
-  try{
-    await _ctFetchJson('/can/filter?id='+encodeURIComponent(fid));
-    _ctSince = 0; _ctRows = []; _ctMapId = {};
-    _ctDrawTable();
-    showToast(fid ? 'Filter ID: '+fid.toUpperCase() : 'Filter dihapus (semua ID)');
-  }catch(e){ showToast('Gagal set filter CAN'); }
-}
-async function ctClearRx(){
-  try{ await _ctFetchJson('/can/clear'); }catch(e){}
-  _ctRows = []; _ctMapId = {};
-  _ctDrawTable();
-}
-function ctTogglePause(){
-  _ctPaused = !_ctPaused;
-  const b = document.getElementById('ctPauseBtn');
-  if(b) b.textContent = _ctPaused ? '▶ Resume' : '⏸ Pause';
-}
-function ctToggleView(){
-  _ctView = _ctView === 'id' ? 'raw' : 'id';
-  const b = document.getElementById('ctViewBtn');
-  if(b) b.textContent = _ctView === 'id' ? 'per-ID' : 'Stream';
-  _ctDrawTable();
-}
-async function ctPollRx(){
-  if(_ctPaused || _ctBusyRx) return;
-  _ctBusyRx = true;
-  try{
-    const d = await _ctFetchJson('/can/rx?since='+_ctSince, 2000);
-    if(d.seq < _ctSince){ _ctSince = 0; _ctRows = []; _ctMapId = {}; }
-    _ctSince = d.seq || 0;
-    if(Array.isArray(d.f) && d.f.length){
-      for(const f of d.f){
-        const o = { t:f[0], id:String(f[1]).toUpperCase(), ext:f[2]&1, rtr:(f[2]>>1)&1, tx:(f[2]>>2)&1, dlc:f[3], d:_ctHx(f[4]) };
-        _ctRows.push(o);
-        const k = o.id + (o.tx?'T':'');
-        const m = _ctMapId[k] || (_ctMapId[k] = { n:0, p:0, last:0 });
-        m.p = m.last ? (o.t - m.last) : 0;
-        m.last = o.t; m.n++; m.o = o;
-      }
-      if(_ctRows.length > 600) _ctRows = _ctRows.slice(-600);
-      _ctDrawTable();
-    }
-  }catch(e){}
-  _ctBusyRx = false;
-}
-function _ctDrawTable(){
-  const th = document.getElementById('ctHead');
-  const tb = document.getElementById('ctBody');
-  if(!th || !tb) return;
-  if(_ctView === 'id'){
-    th.innerHTML = '<tr><th style="padding:5px;text-align:left">ID</th><th style="padding:5px">n</th><th style="padding:5px">ms</th><th style="padding:5px">DLC</th><th style="padding:5px;text-align:left">Data</th></tr>';
-    const keys = Object.keys(_ctMapId).sort();
-    if(!keys.length){
-      tb.innerHTML = '<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--muted)">Belum ada frame CAN</td></tr>';
-      return;
-    }
-    tb.innerHTML = keys.map(k=>{
-      const m = _ctMapId[k], o = m.o;
-      return `<tr style="${o.tx?'color:var(--warning)':''}">
-        <td style="padding:4px 5px;font-weight:700;color:${o.tx?'var(--warning)':'var(--green)'}">${o.tx?'TX ':''}0x${o.id}${o.ext?'x':''}${o.rtr?'R':''}</td>
-        <td style="padding:4px 5px;text-align:center">${m.n}</td>
-        <td style="padding:4px 5px;text-align:center">${m.p}</td>
-        <td style="padding:4px 5px;text-align:center">${o.dlc}</td>
-        <td style="padding:4px 5px">${o.d}</td>
-      </tr>`;
-    }).join('');
+function openEsp32DashboardWeb(){
+  const url = 'http://192.168.4.1/';
+  if(IS_NATIVE_ANDROID && window.Android && typeof Android.openUrl === 'function'){
+    Android.openUrl(url);
   } else {
-    th.innerHTML = '<tr><th style="padding:5px;text-align:left">ms</th><th style="padding:5px;text-align:left">ID</th><th style="padding:5px">DLC</th><th style="padding:5px;text-align:left">Data</th></tr>';
-    if(!_ctRows.length){
-      tb.innerHTML = '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--muted)">Belum ada frame CAN</td></tr>';
-      return;
-    }
-    tb.innerHTML = _ctRows.slice(-120).reverse().map(o=>`<tr style="${o.tx?'color:var(--warning)':''}">
-      <td style="padding:4px 5px">${o.t}</td>
-      <td style="padding:4px 5px;font-weight:700;color:${o.tx?'var(--warning)':'var(--green)'}">${o.tx?'TX ':''}0x${o.id}${o.ext?'x':''}${o.rtr?'R':''}</td>
-      <td style="padding:4px 5px;text-align:center">${o.dlc}</td>
-      <td style="padding:4px 5px">${o.d}</td>
-    </tr>`).join('');
+    window.open(url, '_blank');
   }
-}
-function ctExportCsv(){
-  if(!_ctRows.length){ showToast('Belum ada frame CAN untuk diekspor'); return; }
-  const csv = 'ms,id,ext,rtr,tx,dlc,data\n' + _ctRows.map(o=>[o.t,'0x'+o.id,o.ext,o.rtr,o.tx,o.dlc,'"'+o.d+'"'].join(',')).join('\n');
-  const fname = 'gesits_can_sniffer_' + new Date().toISOString().slice(0,19).replace(/[:T]/g,'-') + '.csv';
-  if(IS_NATIVE_ANDROID && window.Android && typeof Android.exportFile === 'function'){
-    Android.exportFile(fname, csv, 'text/csv');
-    showToast('📥 Log CAN CSV siap disimpan/dibagikan');
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
-  a.download = fname;
-  document.body.appendChild(a); a.click();
-  setTimeout(()=>{ try{ URL.revokeObjectURL(a.href); a.remove(); }catch(e){} }, 1000);
-}
-function ctApplyVotolPreset(){
-  document.getElementById('ctTxId').value = '3FF';
-  document.getElementById('ctTxData').value = '09 55 AA AA 00 AA 00 00';
-  document.getElementById('ctTxExt').checked = false;
-  document.getElementById('ctTxRtr').checked = false;
-  document.getElementById('ctTxDlc').value = '8';
-  document.getElementById('ctFilterId').value = '3FE';
-  document.getElementById('ctTxMsg').textContent = 'Preset Votol siap (pastikan mode NORMAL lalu klik Kirim 1x / Ulangi & pantau balasan 0x3FE).';
-}
-async function ctSendFrame(rep){
-  const id = document.getElementById('ctTxId').value.trim();
-  if(!id){ document.getElementById('ctTxMsg').textContent = 'ID hex tidak boleh kosong'; return; }
-  const u = '/can/tx?id=' + encodeURIComponent(id)
-    + '&ext=' + (document.getElementById('ctTxExt').checked ? 1 : 0)
-    + '&rtr=' + (document.getElementById('ctTxRtr').checked ? 1 : 0)
-    + '&dlc=' + encodeURIComponent(document.getElementById('ctTxDlc').value||'0')
-    + '&data=' + encodeURIComponent(document.getElementById('ctTxData').value||'')
-    + (rep ? '&rep=1&ms=' + encodeURIComponent(document.getElementById('ctTxMs').value||'500') : '');
-  try{
-    const r = await _ctFetchJson(u);
-    document.getElementById('ctTxMsg').textContent = r.ok ? (rep ? '✓ Repeat TX aktif' : '✓ Frame terkirim') : ('✗ ' + (r.err || 'Gagal (pastikan mode NORMAL)'));
-    ctRefreshStatus();
-  }catch(e){
-    document.getElementById('ctTxMsg').textContent = 'Gagal menghubungi 192.168.4.1';
-  }
-}
-async function ctStopRepeat(){
-  try{
-    await _ctFetchJson('/can/txstop');
-    document.getElementById('ctTxMsg').textContent = 'Repeat TX dihentikan';
-    ctRefreshStatus();
-  }catch(e){}
+  showToast('Buka http://192.168.4.1 — pastikan Wi-Fi "Gesits CAN" aktif & DATA SELULER dimatikan!');
 }
 
 </script>
