@@ -134,12 +134,55 @@ jobs:
           path: GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk
           retention-days: 30
 
+      - name: Setup Arduino CLI
+        id: arduino_cli
+        continue-on-error: true
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache ESP32 Arduino core
+        if: steps.arduino_cli.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: esp32-arduino-core-v3
+
+      - name: Compile ESP32 Minimal CAN Firmware (.bin)
+        id: esp32_build
+        if: steps.arduino_cli.outcome == 'success'
+        continue-on-error: true
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core update-index
+          if ! arduino-cli core list | grep -q "esp32:esp32"; then
+            arduino-cli core install esp32:esp32
+          fi
+          FW_VER=$(grep -E '#define\s+FW_VERSION' esp32/gesits_can_minimal/gesits_can_minimal.ino | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+          [ -z "$FW_VER" ] && FW_VER="1.0.0"
+          mkdir -p build_esp32
+          arduino-cli compile --fqbn esp32:esp32:esp32:PartitionScheme=min_spiffs --output-dir build_esp32 esp32/gesits_can_minimal/gesits_can_minimal.ino
+          BIN_OUT="gesits_can_minimal-v${FW_VER}.bin"
+          cp build_esp32/gesits_can_minimal.ino.bin "${BIN_OUT}"
+          echo "esp32_fw=${FW_VER}" >> "$GITHUB_OUTPUT"
+          echo "esp32_bin=${BIN_OUT}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload ESP32 Firmware artifact
+        if: steps.esp32_build.outputs.esp32_bin != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: gesits_can_minimal-v${{ steps.esp32_build.outputs.esp32_fw }}
+          path: ${{ steps.esp32_build.outputs.esp32_bin }}
+          retention-days: 30
+
       - name: Generate release changelog & update version.json
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:
           VERSION_NAME: ${{ steps.bump.outputs.version_name }}
           VERSION_CODE: ${{ steps.bump.outputs.version_code }}
           REPO_SLUG: ${{ github.repository }}
+          ESP32_FW: ${{ steps.esp32_build.outputs.esp32_fw }}
+          ESP32_BIN: ${{ steps.esp32_build.outputs.esp32_bin }}
         run: |
           python3 - <<'EOF'
           import json, os, subprocess
@@ -168,6 +211,8 @@ jobs:
           v_code = int(os.environ.get("VERSION_CODE", "0") or 0)
           repo = os.environ.get("REPO_SLUG", "armadit-eng/gesits-dashboard")
           apk_name = f"GesitsDashboard-v{v_name}-vc{v_code}-debug.apk"
+          esp32_fw = os.environ.get("ESP32_FW", "").strip()
+          esp32_bin = os.environ.get("ESP32_BIN", "").strip()
           notes_lines = [f"- {ln}" for ln in lines[:20]] if lines else ["- Pembaruan stabilitas, perbaikan bug, dan peningkatan performa aplikasi."]
 
           release_md = "\n".join([f"### Perubahan di v{v_name} (Build {v_code})", *notes_lines]) + "\n"
@@ -180,6 +225,9 @@ jobs:
               "releaseUrl": f"https://github.com/{repo}/releases/tag/{v_name}",
               "notes": "\n".join(notes_lines),
           }
+          if esp32_bin and Path(esp32_bin).exists():
+              ver_json["esp32FwVersion"] = esp32_fw
+              ver_json["esp32BinUrl"] = f"https://github.com/{repo}/releases/download/{v_name}/{esp32_bin}"
           Path("app/src/main/assets/version.json").write_text(json.dumps(ver_json, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
           EOF
 
@@ -203,4 +251,6 @@ jobs:
           name: "GESITS Dashboard ${{ steps.bump.outputs.version_name }}"
           body_path: release_notes.md
           generate_release_notes: true
-          files: GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk
+          files: |
+            GesitsDashboard-v${{ steps.bump.outputs.version_name }}-vc${{ steps.bump.outputs.version_code }}-debug.apk
+            gesits_can_minimal*.bin

@@ -1,6 +1,7 @@
 /*
   Gesits CAN Minimalist (CAN Reader + ACK + MID Emulator + CAN Tool + BLE)
   Board: DOIT ESP32 DEVKIT V1 / ESP32 Dev Module (Arduino ESP32 core 2.x / 3.x)
+  Partition Scheme: Minimal SPIFFS (1.9MB APP with OTA / 190KB SPIFFS)
   Library eksternal: TIDAK ADA (100% bawaan ESP32 Arduino Core).
 
   Hardware:
