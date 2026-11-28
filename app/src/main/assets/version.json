@@ -1,7 +1,7 @@
 {
-  "version": "1.0.1.40",
-  "versionCode": 21,
-  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.40/GesitsDashboard-v1.0.1.40-vc21-debug.apk",
-  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.40",
-  "notes": "- perf(ui): optimize dashboard polling and status refresh"
+  "version": "1.0.1.41",
+  "versionCode": 22,
+  "apkUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/download/1.0.1.41/GesitsDashboard-v1.0.1.41-vc22-debug.apk",
+  "releaseUrl": "https://github.com/armadit-eng/gesits-dashboard/releases/tag/1.0.1.41",
+  "notes": "- feat: add ESP32 Wi-Fi binding and custom MP4 muxer"
 }
